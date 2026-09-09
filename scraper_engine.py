@@ -178,16 +178,19 @@ _STEALTH_JS = """
 """
 
 
-def _build_context(playwright: Playwright):
-    """Launch a stealth Chromium context with randomised fingerprint."""
+def _build_context(playwright: Playwright, headless: bool = True, proxy_server: str | None = None):
+    """Launch a stealth Chromium context with randomised fingerprint and optional proxy."""
     ua = _random_ua()
     vp = _random_viewport()
     _log("INFO", f"Browser UA  : {ua[:80]}…")
     _log("INFO", f"Viewport    : {vp['width']}×{vp['height']}")
+    _log("INFO", f"Headless    : {headless}")
+    if proxy_server:
+        _log("INFO", f"Proxy       : {proxy_server}")
 
-    browser = playwright.chromium.launch(
-        headless=True,
-        args=[
+    launch_kwargs: dict = {
+        "headless": headless,
+        "args": [
             "--no-sandbox",
             "--disable-blink-features=AutomationControlled",
             "--disable-features=IsolateOrigins,site-per-process",
@@ -195,7 +198,11 @@ def _build_context(playwright: Playwright):
             "--disable-dev-shm-usage",
             "--window-size=1920,1080",
         ],
-    )
+    }
+    if proxy_server:
+        launch_kwargs["proxy"] = {"server": proxy_server}
+
+    browser = playwright.chromium.launch(**launch_kwargs)
     context = browser.new_context(
         user_agent=ua,
         viewport=vp,
@@ -224,13 +231,7 @@ def _build_context(playwright: Playwright):
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _mmt_url(source: str, destination: str, journey_date: date) -> str:
-    """
-    Build a MakeMyTrip one-way search URL.
-    Example:
-      https://www.makemytrip.com/flight/search?
-        itinerary=DEL-BOM-16092026&tripType=O&paxType=A-1_C-0_I-0
-        &intl=false&cabinClass=E&ccde=IN
-    """
+    """Build a MakeMyTrip one-way search URL."""
     src_code = MMT_CITY_CODES.get(source, source[:3].upper())
     dst_code = MMT_CITY_CODES.get(destination, destination[:3].upper())
     date_str  = journey_date.strftime("%d%m%Y")   # DDMMYYYY
@@ -240,6 +241,20 @@ def _mmt_url(source: str, destination: str, journey_date: date) -> str:
         f"itinerary={itinerary}&tripType=O"
         f"&paxType=A-1_C-0_I-0&intl=false&cabinClass=E&ccde=IN"
     )
+
+def _easemytrip_url(source: str, destination: str, journey_date: date) -> str:
+    """Build an EaseMyTrip one-way search URL."""
+    src_code = MMT_CITY_CODES.get(source, source[:3].upper())
+    dst_code = MMT_CITY_CODES.get(destination, destination[:3].upper())
+    date_str = journey_date.strftime("%d/%m/%Y")
+    return f"https://www.easemytrip.com/flight-search/{src_code}-{dst_code}-{date_str}/1/0/0/E/0/0"
+
+def _yatra_url(source: str, destination: str, journey_date: date) -> str:
+    """Build a Yatra one-way search URL."""
+    src_code = MMT_CITY_CODES.get(source, source[:3].upper())
+    dst_code = MMT_CITY_CODES.get(destination, destination[:3].upper())
+    date_str = journey_date.strftime("%d-%m-%Y")
+    return f"https://flight.yatra.com/air-search/dom/v2/{src_code}/{dst_code}/1/0/0/E/{date_str}/{src_code}-{dst_code}"
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -631,6 +646,12 @@ def main() -> None:
     parser.add_argument("--destination", default=None, help="Single destination city")
     parser.add_argument("--windows",     default=",".join(map(str, DEFAULT_WINDOWS)),
                         help=f"Comma-separated advance-purchase windows, default: {DEFAULT_WINDOWS}")
+    parser.add_argument("--platform",    default="makemytrip", choices=["makemytrip", "easemytrip", "yatra", "all"],
+                        help="OTA platform to target (makemytrip, easemytrip, yatra, all)")
+    parser.add_argument("--proxy-server", default=None,
+                        help="Residential HTTP/SOCKS proxy server (e.g. http://user:pass@proxy:8080)")
+    parser.add_argument("--headful",     action="store_true",
+                        help="Run browser in visible (headful) mode to bypass bot challenges")
     parser.add_argument("--dry-run",     action="store_true",
                         help="Print records without inserting into DB")
     parser.add_argument("--no-migrate",  action="store_true",
@@ -668,7 +689,7 @@ def main() -> None:
     }
 
     with sync_playwright() as pw:
-        browser, context = _build_context(pw)
+        browser, context = _build_context(pw, headless=not args.headful, proxy_server=args.proxy_server)
         page = context.new_page()
 
         for src, dst in routes:
