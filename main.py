@@ -48,6 +48,7 @@ from index_engine import (
     DGCA_ROUTE_WEIGHTS,
 )
 from models import FlightRecord
+from logger import audit
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Security — API key for protected NSO endpoints
@@ -67,6 +68,22 @@ def _require_api_key(x_api_key: str = Header(default="", alias="X-API-Key")) -> 
 # App bootstrap
 # ─────────────────────────────────────────────────────────────────────────────
 
+import time as _time
+from contextlib import asynccontextmanager
+from fastapi import Request
+
+@asynccontextmanager
+async def _lifespan(application):
+    """Log service startup with live DB record count."""
+    from sqlalchemy import text
+    try:
+        with engine.connect() as conn:
+            count = conn.execute(text("SELECT COUNT(*) FROM flight_records")).scalar()
+    except Exception:
+        count = -1
+    audit.startup(count)
+    yield   # application runs here
+
 app = FastAPI(
     title="✈️ Real-time Airfare Price Index API",
     description=(
@@ -74,9 +91,10 @@ app = FastAPI(
         "airline market comparison, and booking-window pricing curves from live "
         "PostgreSQL data."
     ),
-    version="1.0.0",
+    version="1.0.0-SIH26056",
     docs_url="/docs",
     redoc_url="/redoc",
+    lifespan=_lifespan,
 )
 
 # CORS — allow both Vite (5173) and CRA / Next.js (3000) dev servers
@@ -92,6 +110,21 @@ app.add_middleware(
     allow_methods=["GET"],
     allow_headers=["*"],
 )
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Audit middleware — times every request, logs to audit.log
+# ─────────────────────────────────────────────────────────────────────────────
+
+@app.middleware("http")
+async def _audit_middleware(request: Request, call_next):
+    t0  = _time.perf_counter()
+    response = await call_next(request)
+    ms  = round((_time.perf_counter() - t0) * 1000, 2)
+    ip  = request.client.host if request.client else "unknown"
+    # Skip noisy Swagger/OpenAPI calls from the audit log
+    if not request.url.path.startswith(("/docs", "/redoc", "/openapi")):
+        audit.api_request(request.method, request.url.path, response.status_code, ms, ip)
+    return response
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -110,7 +143,11 @@ def health(db: Session = Depends(get_db)):
         count = db.query(func.count(FlightRecord.id)).scalar()
     except Exception as exc:
         raise HTTPException(status_code=503, detail=f"DB unavailable: {exc}")
-    return {"status": "healthy", "total_records": count}
+    return {
+        "status":        "healthy",
+        "total_records": count,
+        "audit":         audit.stats(),
+    }
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -431,7 +468,10 @@ def nso_export(
     if not payload["series"]:
         raise HTTPException(status_code=404, detail="No data available for NSO export")
 
+    client_ip = "server"
+
     if format == "json":
+        audit.nso_export(frequency, "json", len(payload["series"]), client_ip)
         return payload
 
     # ── CSV download ────────────────────────────────────────────────────────
@@ -455,6 +495,7 @@ def nso_export(
     writer.writerows(payload["series"])
 
     filename = f"DAPI_NSO_Export_{frequency}_{payload['dataset']['base_period']}.csv"
+    audit.nso_export(frequency, "csv", len(payload["series"]), client_ip)
     return StreamingResponse(
         iter([buf.getvalue()]),
         media_type="text/csv",

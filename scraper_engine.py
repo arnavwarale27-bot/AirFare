@@ -61,6 +61,7 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from database import engine, Base, get_db
 from models import FlightRecord
+from logger import audit
 import models  # noqa: F401 — registers FlightRecord
 
 
@@ -464,6 +465,7 @@ def scrape_route(
     """
     days_left = (date_of_journey - date.today()).days
     url = _mmt_url(source, destination, date_of_journey)
+    _t_route_start = time.time()
 
     _log("INFO", f"  Scraping {source:12s} → {destination:12s} | {date_of_journey} (T+{days_left})")
     _log("DIM",  f"  URL: {url}")
@@ -488,6 +490,8 @@ def scrape_route(
 
             if records:
                 _log("OK", f"  ✓  {len(records)} Live_Scraped records")
+                audit.scraper_run(source, destination, days_left, "Live_Scraped",
+                                  len(records), time.time() - _t_route_start)
                 return records
 
             _log("WARN", f"  Attempt {attempt}: 0 cards extracted — retrying…")
@@ -501,7 +505,10 @@ def scrape_route(
             _human_delay(DELAY_MAX, DELAY_MAX + 3)
 
     # All attempts exhausted → fallback
-    return _synthetic_fallback(source, destination, date_of_journey, days_left)
+    result = _synthetic_fallback(source, destination, date_of_journey, days_left)
+    audit.scraper_run(source, destination, days_left, "Synthetic_Backup",
+                      len(result), time.time() - _t_route_start)
+    return result
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -547,6 +554,7 @@ def _bulk_insert(records: list[dict], dry_run: bool = False) -> tuple[int, int]:
         for i in range(0, len(records), INSERT_CHUNK):
             chunk = records[i : i + INSERT_CHUNK]
             orm_objs = []
+            _t_chunk = time.time()
             for rec in chunk:
                 try:
                     obj = FlightRecord(
@@ -577,6 +585,13 @@ def _bulk_insert(records: list[dict], dry_run: bool = False) -> tuple[int, int]:
 
             db.bulk_save_objects(orm_objs)
             db.commit()
+            chunk_elapsed = time.time() - _t_chunk
+            audit.db_insert(
+                "flight_records",
+                len(orm_objs),
+                chunk_elapsed,
+                records[i].get("data_source_type", "Unknown") if records else "Unknown",
+            )
             _log("OK", f"  ✓  Inserted chunk {i // INSERT_CHUNK + 1}: {len(orm_objs)} rows")
 
     except SQLAlchemyError as exc:
@@ -697,6 +712,14 @@ def main() -> None:
         stats["skipped"]  = skip
 
     stats["elapsed_s"] = time.time() - start
+    audit.scraper_session(
+        routes_attempted  = stats["routes_attempted"],
+        live_routes       = stats["live_routes"],
+        synthetic_routes  = stats["synthetic_routes"],
+        total_records     = stats["total_records"],
+        inserted          = stats["inserted"],
+        elapsed_s         = stats["elapsed_s"],
+    )
     _print_summary(stats)
 
 
