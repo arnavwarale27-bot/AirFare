@@ -45,6 +45,10 @@ from index_engine import (
     compute_leadtime_curve,
     compute_route_trends,
     build_nso_export_payload,
+    compute_price_distribution,
+    compute_data_quality_metrics,
+    compute_geographic_hierarchy,
+    compute_route_summary_cards,
 )
 from models import FlightRecord
 from logger import audit
@@ -500,3 +504,57 @@ def nso_export(
         media_type="text/csv",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 10. Price Distribution Endpoint (Min, P25, Median, Mean, P75, Max)
+# ─────────────────────────────────────────────────────────────────────────────
+
+@app.get(
+    "/api/v1/distribution",
+    summary="Get 5-number price distribution (Min, P25, Median, Mean, P75, Max)",
+)
+def get_price_distribution(
+    source: Optional[str] = Query(None, description="Departure city"),
+    destination: Optional[str] = Query(None, description="Arrival city"),
+    cls: Optional[str] = Query(None, alias="class", description="Cabin class"),
+    db: Session = Depends(get_db),
+):
+    return compute_price_distribution(db, source=source, destination=destination, flight_class=cls)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 11. Data Quality & Reliability Endpoint
+# ─────────────────────────────────────────────────────────────────────────────
+
+@app.get(
+    "/api/v1/quality",
+    summary="Get MoSPI/NSO statistical data quality & validation parameters",
+)
+def get_data_quality(db: Session = Depends(get_db)):
+    return compute_data_quality_metrics(db)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 12. Geographic / Regional Hierarchy Endpoint
+# ─────────────────────────────────────────────────────────────────────────────
+
+@app.get(
+    "/api/v1/geography",
+    summary="Get airfare index & average fare by geographic region",
+)
+def get_geography(db: Session = Depends(get_db)):
+    return compute_geographic_hierarchy(db)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 13. Top Route Summaries Endpoint
+# ─────────────────────────────────────────────────────────────────────────────
+
+@app.get(
+    "/api/v1/routes/summary",
+    summary="Get multi-route comparison grid with index, WoW, MoM, and Min/Max",
+)
+def get_route_summaries(db: Session = Depends(get_db)):
+    return compute_route_summary_cards(db)
+

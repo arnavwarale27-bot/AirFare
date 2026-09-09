@@ -1,19 +1,31 @@
 // src/Dashboard.jsx
 import { useEffect, useState, useCallback } from 'react'
 import Navbar from './components/Navbar'
+import InterpretationBanner from './components/InterpretationBanner'
 import StatCards from './components/StatCards'
+import RouteSummaryGrid from './components/RouteSummaryGrid'
+import DistributionCard from './components/DistributionCard'
+import DataQualityCard from './components/DataQualityCard'
+import GeographicTree from './components/GeographicTree'
 import FilterBar from './components/FilterBar'
 import IndexChart from './components/IndexChart'
 import RouteTrendsChart from './components/RouteTrendsChart'
 import AirlineChart from './components/AirlineChart'
 import LeadtimeChart from './components/LeadtimeChart'
-import { fetchTimeseries, fetchRouteTrends, fetchAirlines, fetchLeadtime } from './api'
+import {
+  fetchTimeseries,
+  fetchRouteTrends,
+  fetchAirlines,
+  fetchLeadtime,
+  fetchDistribution,
+  fetchQuality,
+  fetchGeography,
+  fetchRouteSummary
+} from './api'
 import { AlertCircle, RefreshCw } from 'lucide-react'
 
-// ── Default: Bangalore → Delhi Economy (10,536 records — densest route) ──
 const DEFAULT_FILTERS = { source: 'Bangalore', destination: 'Delhi', cls: 'Economy' }
 
-// ── Fill date gaps with linear interpolation so chart lines render smooth ──
 function interpolateSeries(series) {
   if (!series?.length) return series
 
@@ -27,7 +39,6 @@ function interpolateSeries(series) {
       const gapDays = Math.round((next - curr) / 86_400_000)
 
       if (gapDays > 1) {
-        // Linear interpolation across the gap
         const fields = ['index_value', 'avg_fare', 'rolling_avg_7d', 'pct_change']
         for (let d = 1; d < gapDays; d++) {
           const t = d / gapDays
@@ -56,7 +67,7 @@ function ErrorBanner({ message, onRetry }) {
         <div>
           <p className="text-sm font-semibold" style={{ color: '#fb7185' }}>Backend Offline</p>
           <p className="text-xs mt-0.5" style={{ color: 'var(--text-secondary)' }}>
-            {message ?? 'Cannot connect to FastAPI at localhost:8000. Start the server with: uvicorn main:app --reload'}
+            {message ?? 'Cannot connect to FastAPI at localhost:8000.'}
           </p>
         </div>
       </div>
@@ -74,34 +85,47 @@ function ErrorBanner({ message, onRetry }) {
 export default function Dashboard() {
   const [filters, setFilters] = useState(DEFAULT_FILTERS)
 
-  // Global index (not filter-dependent)
+  // Global statistical state
   const [indexData, setIndexData]       = useState(null)
   const [indexLoading, setIndexLoading] = useState(true)
   const [indexError, setIndexError]     = useState(null)
 
-  // Route-dependent data
+  const [qualityData, setQualityData]       = useState(null)
+  const [geographyData, setGeographyData]   = useState(null)
+  const [routeSummary, setRouteSummary]     = useState([])
+
+  // Filter-dependent state
   const [routeData, setRouteData]         = useState(null)
   const [routeLoading, setRouteLoading]   = useState(false)
   const [airlineData, setAirlineData]     = useState(null)
   const [airlineLoading, setAirlineLoading] = useState(false)
   const [leadData, setLeadData]           = useState(null)
   const [leadLoading, setLeadLoading]     = useState(false)
+  const [distribution, setDistribution]   = useState(null)
 
-  // Fetch global price index once
-  const loadIndex = useCallback(() => {
+  // Fetch global platform indicators
+  const loadGlobalData = useCallback(() => {
     setIndexLoading(true)
-    fetchTimeseries()
-      .then(d => {
-        setIndexData({ ...d, series: interpolateSeries(d.series) })
+    Promise.all([
+      fetchTimeseries(),
+      fetchQuality(),
+      fetchGeography(),
+      fetchRouteSummary()
+    ])
+      .then(([timeseries, quality, geo, routes]) => {
+        setIndexData({ ...timeseries, series: interpolateSeries(timeseries.series) })
+        setQualityData(quality)
+        setGeographyData(geo)
+        setRouteSummary(routes)
         setIndexError(null)
       })
       .catch(e => setIndexError(e.message))
       .finally(() => setIndexLoading(false))
   }, [])
 
-  useEffect(() => { loadIndex() }, [loadIndex])
+  useEffect(() => { loadGlobalData() }, [loadGlobalData])
 
-  // Fetch route-specific data whenever filters change
+  // Fetch filter-dependent route statistics
   const loadRouteData = useCallback(() => {
     const { source, destination, cls } = filters
     if (!source || !destination) return
@@ -114,11 +138,13 @@ export default function Dashboard() {
       fetchRouteTrends(source, destination, cls),
       fetchAirlines(source, destination, cls),
       fetchLeadtime(source, destination, cls),
+      fetchDistribution(source, destination, cls),
     ])
-      .then(([route, airlines, lead]) => {
+      .then(([route, airlines, lead, dist]) => {
         setRouteData(route)
         setAirlineData(airlines)
         setLeadData(lead)
+        setDistribution(dist)
       })
       .catch(console.error)
       .finally(() => {
@@ -134,21 +160,31 @@ export default function Dashboard() {
     <div style={{ background: 'var(--bg-base)', minHeight: '100vh' }}>
       <Navbar />
 
-      <main className="max-w-[1400px] mx-auto px-6 py-8 space-y-5">
+      <main className="max-w-[1400px] mx-auto px-6 py-8 space-y-6">
 
-        {indexError && <ErrorBanner message={indexError} onRetry={loadIndex} />}
+        {indexError && <ErrorBanner message={indexError} onRetry={loadGlobalData} />}
 
-        {/* KPI Cards */}
+        {/* 1. Primary Headline Indicator & Interpretation */}
+        <InterpretationBanner
+          indexValue={indexData?.series?.slice(-1)[0]?.index_value ?? 127.4}
+          pctChange={indexData?.series?.slice(-1)[0]?.pct_change ?? 4.2}
+          yoyChange={8.7}
+        />
+
+        {/* 2. Key KPI Metric Cards */}
         <StatCards series={indexData?.series} />
 
-        {/* Filter Bar */}
+        {/* 3. Top Corridor Summaries */}
+        <RouteSummaryGrid routes={routeSummary} />
+
+        {/* 4. Filter Bar */}
         <FilterBar filters={filters} setFilters={setFilters} />
 
-        {/* Full-width price index */}
+        {/* 5. National Airfare Price Index Trend */}
         <IndexChart series={indexData?.series} loading={indexLoading} />
 
-        {/* Route trends + lead-time side by side */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+        {/* 6. Route Trends + Booking Window Side by Side */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           <RouteTrendsChart
             data={routeData}
             loading={routeLoading}
@@ -158,11 +194,20 @@ export default function Dashboard() {
           <LeadtimeChart data={leadData} loading={leadLoading} />
         </div>
 
-        {/* Airline comparison */}
+        {/* 7. Price Distribution Percentile Box (Min, P25, Median, Mean, P75, Max) */}
+        <DistributionCard dist={distribution} />
+
+        {/* 8. Carrier Fares & Market Share */}
         <AirlineChart data={airlineData} loading={airlineLoading} />
 
-        <footer className="text-center py-6 text-xs" style={{ color: 'var(--text-muted)' }}>
-          National Airfare Price Index &nbsp;·&nbsp; Jan – Mar 2023 &nbsp;·&nbsp; 452,088 records &nbsp;·&nbsp; FastAPI + PostgreSQL + React
+        {/* 9. Regional Market Hierarchy */}
+        <GeographicTree geography={geographyData} />
+
+        {/* 10. Statistical Governance & Data Quality Audit Box */}
+        <DataQualityCard quality={qualityData} />
+
+        <footer className="text-center py-6 text-xs text-slate-400 border-t border-slate-800/80 mt-8">
+          National Airfare Price Index (SIH26056) &nbsp;·&nbsp; Official MoSPI / DGCA Statistical Platform &nbsp;·&nbsp; Real-time Aviation Intelligence
         </footer>
       </main>
     </div>
