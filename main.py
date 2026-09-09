@@ -27,9 +27,10 @@ from __future__ import annotations
 import csv
 import io
 import os
+from datetime import datetime, timezone
 from typing import Optional
 
-from fastapi import Depends, FastAPI, Header, HTTPException, Query
+from fastapi import BackgroundTasks, Depends, FastAPI, Header, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from sqlalchemy import func
@@ -54,7 +55,7 @@ from models import FlightRecord
 from logger import audit
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Security — API key for protected NSO endpoints
+# Security — API key for protected NSO & Admin endpoints
 # Set env var NSO_API_KEY before running; defaults to dev key for local use.
 # ─────────────────────────────────────────────────────────────────────────────
 _NSO_API_KEY = os.environ.get("NSO_API_KEY", "nso-dev-key-2024")
@@ -77,7 +78,7 @@ from fastapi import Request
 
 @asynccontextmanager
 async def _lifespan(application):
-    """Log service startup with live DB record count."""
+    """Log service startup with live DB record count and start background scraper scheduler."""
     from sqlalchemy import text
     try:
         with engine.connect() as conn:
@@ -85,7 +86,21 @@ async def _lifespan(application):
     except Exception:
         count = -1
     audit.startup(count)
+
+    # Start APScheduler for nightly scraper
+    try:
+        from scheduler import start_scheduler, stop_scheduler
+        start_scheduler()
+    except Exception as exc:
+        print(f"Failed to start scraper scheduler: {exc}")
+
     yield   # application runs here
+
+    try:
+        from scheduler import stop_scheduler
+        stop_scheduler()
+    except Exception:
+        pass
 
 app = FastAPI(
     title="✈️ Real-time Airfare Price Index API",
@@ -185,8 +200,11 @@ def get_filters(db: Session = Depends(get_db)):
         "fares. Returns daily index values, percentage change, and 7-day rolling average."
     ),
 )
-def index_timeseries(db: Session = Depends(get_db)):
-    data = compute_index_timeseries(db)
+def index_timeseries(
+    range: Optional[str] = Query(None, description="Time range filter: 24H, 7D, 30D, 90D, YTD"),
+    db: Session = Depends(get_db),
+):
+    data = compute_index_timeseries(db, range_val=range)
     if not data:
         raise HTTPException(status_code=404, detail="No flight records found")
     return {
@@ -557,4 +575,71 @@ def get_geography(db: Session = Depends(get_db)):
 )
 def get_route_summaries(db: Session = Depends(get_db)):
     return compute_route_summary_cards(db)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 14. Admin Manual Scraper Trigger Endpoint
+# ─────────────────────────────────────────────────────────────────────────────
+
+@app.post(
+    "/api/v1/admin/trigger-scrape",
+    tags=["Admin"],
+    summary="Manually trigger airfare scrape on demand",
+    description=(
+        "**Secured endpoint** — requires `X-API-Key` header.\n\n"
+        "Triggers an on-demand scraping run across DGCA corridors. "
+        "Pass `?sync=true` to wait for completion or default to asynchronous background execution."
+    ),
+    dependencies=[Depends(_require_api_key)],
+)
+def trigger_scrape(
+    background_tasks: BackgroundTasks,
+    source: Optional[str] = Query(None, description="Optional single origin city"),
+    destination: Optional[str] = Query(None, description="Optional single destination city"),
+    windows: Optional[str] = Query(None, description="Comma-separated windows, e.g. '1,7,30'"),
+    dry_run: bool = Query(False, description="Dry-run mode without DB insertion"),
+    sync: bool = Query(False, description="Run synchronously and wait for results"),
+    _: None = Depends(_require_api_key),
+):
+    from scraper_engine import run_scraper
+    from scheduler import logger
+
+    parsed_windows = [int(w.strip()) for w in windows.split(",") if w.strip()] if windows else None
+
+    if sync:
+        res = run_scraper(
+            source=source,
+            destination=destination,
+            windows=parsed_windows,
+            dry_run=dry_run,
+        )
+        return {
+            "status": "completed",
+            "message": "Manual scrape completed.",
+            "results": res,
+        }
+
+    def _bg_run():
+        logger.info("Manual scrape trigger initiated via API endpoint.")
+        res = run_scraper(
+            source=source,
+            destination=destination,
+            windows=parsed_windows,
+            dry_run=dry_run,
+        )
+        logger.info(f"Manual trigger finished | Inserted: {res.get('inserted')} | Total Scraped: {res.get('total_records')}")
+
+    background_tasks.add_task(_bg_run)
+
+    return {
+        "status": "triggered",
+        "message": "Manual scrape job initiated in background.",
+        "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "params": {
+            "source": source,
+            "destination": destination,
+            "windows": parsed_windows,
+            "dry_run": dry_run,
+        },
+    }
 

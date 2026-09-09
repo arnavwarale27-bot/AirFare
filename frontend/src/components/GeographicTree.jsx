@@ -1,4 +1,4 @@
-// src/components/GeographicTree.jsx
+// src/components/GeographicTree.jsx — Light SaaS Theme
 import React from 'react'
 import { MapPin, Globe } from 'lucide-react'
 
@@ -6,33 +6,45 @@ export default function GeographicTree({ geography }) {
   if (!geography || !geography.regions) return null
 
   return (
-    <div className="p-5 rounded-2xl bg-slate-900/90 border border-slate-800/80 space-y-4">
-      <div className="flex items-center justify-between">
-        <h3 className="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">
-          <Globe size={16} className="text-cyan-400" />
-          Geographic & Regional Market Hierarchy
-        </h3>
-        <span className="text-xs text-slate-400">National Index = {geography.national_index}</span>
+    <div className="card">
+      {/* Header */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <Globe size={15} style={{ color: '#8a8a8f' }} />
+          <h3 style={{ fontSize: 15, fontWeight: 700, color: '#111111' }}>
+            Geographic &amp; Regional Market Hierarchy
+          </h3>
+        </div>
+        <span style={{ fontSize: 12, color: '#8a8a8f' }}>National Index = {geography.national_index}</span>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4" style={{ gap: 14 }}>
         {geography.regions.map((reg, idx) => (
-          <div key={idx} className="p-4 rounded-xl bg-slate-950/60 border border-slate-800/80 space-y-2">
-            <div className="flex items-center justify-between">
-              <span className="text-sm font-bold text-white flex items-center gap-1.5">
-                <MapPin size={13} className="text-cyan-400" /> {reg.region} Region
+          <div key={idx} style={{
+            padding: '18px 20px', borderRadius: 16,
+            background: '#f8f8fa',
+            display: 'flex', flexDirection: 'column', gap: 12,
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <span style={{ fontSize: 13, fontWeight: 700, color: '#111111', display: 'flex', alignItems: 'center', gap: 6 }}>
+                <MapPin size={12} style={{ color: '#8a8a8f', flexShrink: 0 }} /> {reg.region} Region
               </span>
-              <span className="text-xs font-mono font-bold text-cyan-300 px-2 py-0.5 rounded bg-cyan-500/10 border border-cyan-500/20">
+              <span style={{
+                padding: '3px 10px', borderRadius: 8, background: '#ededef',
+                fontSize: 11, fontWeight: 600, color: '#8a8a8f', fontVariantNumeric: 'tabular-nums',
+              }}>
                 Index {reg.region_index}
               </span>
             </div>
 
-            <div className="flex justify-between items-baseline pt-1">
-              <span className="text-[11px] text-slate-400">Avg Fare</span>
-              <span className="text-base font-bold text-white font-mono">₹{reg.average_fare.toLocaleString()}</span>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+              <span style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: '#8a8a8f' }}>Avg Fare</span>
+              <span style={{ fontSize: 18, fontWeight: 800, color: '#111111', fontVariantNumeric: 'tabular-nums' }}>
+                ₹{reg.average_fare.toLocaleString('en-IN')}
+              </span>
             </div>
 
-            <div className="text-[10px] text-slate-400 truncate pt-1 border-t border-slate-800/60">
+            <div style={{ fontSize: 11, color: '#8a8a8f', borderTop: '1px solid rgba(0,0,0,0.06)', paddingTop: 10 }}>
               Cities: {reg.cities.join(', ')}
             </div>
           </div>

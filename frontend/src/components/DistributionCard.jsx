@@ -1,4 +1,4 @@
-// src/components/DistributionCard.jsx
+// src/components/DistributionCard.jsx — Light SaaS Theme
 import React from 'react'
 import { BarChart2 } from 'lucide-react'
 
@@ -6,46 +6,50 @@ export default function DistributionCard({ dist }) {
   if (!dist || dist.count === 0) return null
 
   const items = [
-    { label: 'Minimum', val: dist.min, highlight: false },
-    { label: '25th Percentile (P25)', val: dist.p25, highlight: false },
-    { label: 'Median (P50)', val: dist.median, highlight: true },
-    { label: 'Average (Mean)', val: Math.round(dist.mean), highlight: true },
-    { label: '75th Percentile (P75)', val: dist.p75, highlight: false },
-    { label: 'Maximum', val: dist.max, highlight: false },
+    { label: 'Minimum',               val: dist.min,              highlight: false },
+    { label: 'P25',                   val: dist.p25,              highlight: false },
+    { label: 'Median (P50)',          val: dist.median,           highlight: true  },
+    { label: 'Average (Mean)',        val: Math.round(dist.mean), highlight: true  },
+    { label: 'P75',                   val: dist.p75,              highlight: false },
+    { label: 'Maximum',               val: dist.max,              highlight: false },
   ]
 
   return (
-    <div className="p-5 rounded-2xl bg-slate-900/90 border border-slate-800/80 space-y-4">
-      <div className="flex items-center justify-between">
-        <h3 className="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">
-          <BarChart2 size={16} className="text-indigo-400" />
-          Price Distribution Statistics
-        </h3>
-        <span className="text-xs text-slate-400">
+    <div className="card">
+      {/* Header */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <BarChart2 size={15} style={{ color: '#8a8a8f' }} />
+          <h3 style={{ fontSize: 15, fontWeight: 700, color: '#111111' }}>Price Distribution Statistics</h3>
+        </div>
+        <span style={{ fontSize: 12, color: '#8a8a8f' }}>
           Based on {dist.count.toLocaleString()} observations
         </span>
       </div>
 
-      {/* 5-Number Visual Bar */}
-      <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-6" style={{ gap: 12 }}>
         {items.map((item, idx) => (
-          <div key={idx}
-               className={`p-3 rounded-xl border text-center transition-all ${
-                 item.highlight
-                   ? 'bg-indigo-500/10 border-indigo-500/30'
-                   : 'bg-slate-950/60 border-slate-800/80'
-               }`}>
-            <p className="text-[10px] text-slate-400 font-medium truncate">{item.label}</p>
-            <p className={`text-base font-black font-mono mt-1 ${
-              item.highlight ? 'text-indigo-300' : 'text-white'
-            }`}>
-              ₹{item.val.toLocaleString()}
+          <div key={idx} style={{
+            padding: '14px 16px', borderRadius: 14, textAlign: 'center',
+            background: item.highlight ? '#111111' : '#f8f8fa',
+          }}>
+            <p style={{
+              fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em',
+              color: item.highlight ? 'rgba(255,255,255,0.5)' : '#8a8a8f', marginBottom: 8,
+            }}>
+              {item.label}
+            </p>
+            <p style={{
+              fontSize: 16, fontWeight: 800, fontVariantNumeric: 'tabular-nums',
+              color: item.highlight ? '#ffffff' : '#111111',
+            }}>
+              ₹{item.val.toLocaleString('en-IN')}
             </p>
           </div>
         ))}
       </div>
 
-      <p className="text-[11px] text-slate-400 italic">
+      <p style={{ fontSize: 11, color: '#8a8a8f', fontStyle: 'italic', marginTop: 16 }}>
         * Displaying full percentile spectrum eliminates outlier distortion caused by premium last-minute bookings.
       </p>
     </div>

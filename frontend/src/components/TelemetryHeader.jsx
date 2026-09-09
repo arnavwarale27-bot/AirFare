@@ -1,66 +1,85 @@
-// src/components/TelemetryHeader.jsx
+// src/components/TelemetryHeader.jsx — Light SaaS Theme
 import React, { useState, useEffect } from 'react'
-import { Plane, ShieldCheck, User, Clock, Radio } from 'lucide-react'
+import { Plane, User } from 'lucide-react'
 
 export default function TelemetryHeader() {
   const [timeStr, setTimeStr] = useState('')
-  const [utcStr, setUtcStr] = useState('')
+  const [utcStr, setUtcStr]   = useState('')
 
   useEffect(() => {
-    const updateClocks = () => {
+    const update = () => {
       const now = new Date()
       setTimeStr(now.toLocaleTimeString('en-IN', { hour12: false }))
       setUtcStr(now.toISOString().slice(11, 19))
     }
-    updateClocks()
-    const timer = setInterval(updateClocks, 1000)
-    return () => clearInterval(timer)
+    update()
+    const t = setInterval(update, 1000)
+    return () => clearInterval(t)
   }, [])
 
   return (
-    <header className="fixed top-0 left-64 right-0 h-16 bg-slate-950/90 backdrop-blur-xl border-b border-slate-800/80 z-40 flex items-center justify-between px-6">
-      {/* Title & Badge */}
-      <div className="flex items-center gap-4">
-        <div className="w-8 h-8 rounded bg-cyan-500/10 border border-cyan-500/30 flex items-center justify-center text-cyan-400">
-          <Plane size={18} />
-        </div>
-        <div className="flex flex-col">
-          <div className="flex items-center gap-2">
-            <span className="font-heading text-base font-bold text-white tracking-tight">
-              National Airfare Price Index
-            </span>
-            <span className="font-mono text-[10px] text-cyan-400 px-2 py-0.5 rounded bg-cyan-500/10 border border-cyan-500/30 uppercase font-semibold">
-              SIH26056
-            </span>
-          </div>
-          <span className="text-xs text-slate-400 font-mono">
-            Real-time domestic fare analytics & CPI augmentation — India
-          </span>
-        </div>
+    <header style={{
+      position: 'fixed', top: 0, left: 256, right: 0, height: 64,
+      background: 'rgba(255,255,255,0.92)',
+      backdropFilter: 'blur(16px)',
+      WebkitBackdropFilter: 'blur(16px)',
+      borderBottom: '1px solid rgba(0,0,0,0.06)',
+      zIndex: 40,
+      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+      padding: '0 32px',
+    }}>
+      {/* Title */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        <Plane size={17} style={{ color: '#8a8a8f' }} />
+        <span style={{ fontSize: 15, fontWeight: 700, color: '#111111', letterSpacing: '-0.02em' }}>
+          National Airfare Price Index
+        </span>
+        <span style={{
+          fontSize: 10, fontWeight: 700, color: '#8a8a8f',
+          padding: '3px 10px', borderRadius: 99,
+          background: '#f0f0f2', textTransform: 'uppercase', letterSpacing: '0.06em',
+        }}>
+          SIH26056
+        </span>
       </div>
 
-      {/* Live Telemetry & Clocks */}
-      <div className="flex items-center gap-6">
-        {/* Live Feed Pill */}
-        <div className="hidden md:flex items-center gap-2 px-3 py-1 bg-slate-900 border border-slate-800 rounded-md">
-          <span className="relative flex h-2 w-2">
-            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-            <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-400"></span>
+      {/* Right side */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 20 }}>
+        {/* Live pill */}
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: 7,
+          padding: '6px 14px', borderRadius: 99,
+          background: '#f4f4f6', border: '1px solid rgba(0,0,0,0.08)',
+        }}>
+          <span style={{ position: 'relative', display: 'flex', width: 7, height: 7 }}>
+            <span style={{
+              position: 'absolute', inset: 0, borderRadius: '50%',
+              background: '#2ecc71', opacity: 0.5,
+              animation: 'ping 1.5s cubic-bezier(0,0,0.2,1) infinite',
+            }} />
+            <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#2ecc71', display: 'inline-block' }} />
           </span>
-          <span className="font-mono text-[10px] font-bold text-emerald-400 uppercase tracking-wider">LIVE FEED</span>
-          <span className="text-slate-600 text-xs">•</span>
-          <span className="font-mono text-[10px] text-slate-300">120ms</span>
+          <span style={{ fontSize: 11, fontWeight: 700, color: '#2ecc71', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+            LIVE
+          </span>
+          <span style={{ width: 1, height: 12, background: 'rgba(0,0,0,0.1)' }} />
+          <span style={{ fontSize: 11, color: '#8a8a8f' }}>120ms</span>
         </div>
 
-        {/* Real-time UTC / IST Clocks */}
-        <div className="hidden lg:flex flex-col text-right font-mono text-xs leading-tight">
-          <span className="text-slate-200 font-semibold">{timeStr} <span className="text-slate-500">IST</span></span>
-          <span className="text-slate-400 text-[10px]">{utcStr} <span className="text-slate-500">UTC</span></span>
+        {/* Clock */}
+        <div style={{ textAlign: 'right', lineHeight: 1.3 }}>
+          <p style={{ fontSize: 13, fontWeight: 700, color: '#111111' }}>{timeStr} <span style={{ color: '#8a8a8f', fontWeight: 400 }}>IST</span></p>
+          <p style={{ fontSize: 10, color: '#8a8a8f' }}>{utcStr} UTC</p>
         </div>
 
-        {/* User Icon */}
-        <div className="w-8 h-8 rounded-full bg-cyan-500/20 border border-cyan-500/40 flex items-center justify-center text-cyan-300">
-          <User size={16} />
+        {/* User avatar */}
+        <div style={{
+          width: 34, height: 34, borderRadius: '50%',
+          background: '#f0f0f2', border: '1px solid rgba(0,0,0,0.08)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          color: '#8a8a8f',
+        }}>
+          <User size={15} />
         </div>
       </div>
     </header>

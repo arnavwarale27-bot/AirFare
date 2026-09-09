@@ -120,22 +120,41 @@ def _month_key(d: date) -> str:
 # 1. Standard Global Price Index Time-series (unchanged)
 # ─────────────────────────────────────────────────────────────────────────────
 
-def compute_index_timeseries(db: Session) -> list[dict]:
+def compute_index_timeseries(db: Session, range_val: Optional[str] = None) -> list[dict]:
     """
     Daily baseline-100 price index using frequency-weighted geometric mean.
+    Supports optional range filtering: 24H, 7D, 30D, 90D, YTD.
     Returns: date, avg_fare, flight_count, index_value, pct_change, rolling_avg_7d
     """
-    rows = (
-        db.query(
-            FlightRecord.date_of_journey.label("dt"),
-            func.avg(FlightRecord.fare).label("avg_fare"),
-            func.count(FlightRecord.id).label("flight_count"),
-            func.sum(func.ln(FlightRecord.fare.cast(Float))).label("log_sum"),
-        )
-        .group_by(FlightRecord.date_of_journey)
-        .order_by(FlightRecord.date_of_journey)
-        .all()
+    from datetime import timedelta
+    q = db.query(
+        FlightRecord.date_of_journey.label("dt"),
+        func.avg(FlightRecord.fare).label("avg_fare"),
+        func.count(FlightRecord.id).label("flight_count"),
+        func.sum(func.ln(FlightRecord.fare.cast(Float))).label("log_sum"),
     )
+
+    if range_val:
+        max_date = db.query(func.max(FlightRecord.date_of_journey)).filter(FlightRecord.date_of_journey <= date(2025, 12, 31)).scalar()
+        if max_date:
+            rv = range_val.upper()
+            if rv == "24H":
+                start_dt = max_date - timedelta(days=1)
+            elif rv == "7D":
+                start_dt = max_date - timedelta(days=7)
+            elif rv == "30D":
+                start_dt = max_date - timedelta(days=30)
+            elif rv == "90D":
+                start_dt = max_date - timedelta(days=90)
+            elif rv == "YTD":
+                start_dt = date(max_date.year, 1, 1)
+            else:
+                start_dt = None
+
+            if start_dt:
+                q = q.filter(FlightRecord.date_of_journey >= start_dt, FlightRecord.date_of_journey <= max_date)
+
+    rows = q.group_by(FlightRecord.date_of_journey).order_by(FlightRecord.date_of_journey).all()
 
     if not rows:
         return []
@@ -286,7 +305,7 @@ def compute_leadtime_curve(
 # ─────────────────────────────────────────────────────────────────────────────
 
 def compute_filter_metadata(db: Session) -> dict:
-    """Distinct values for UI dropdowns + dataset date bounds."""
+    """Distinct values for UI dropdowns + dataset date bounds + route count."""
     def distinct_sorted(col):
         return sorted(
             [r[0] for r in db.query(col).distinct().filter(col.isnot(None)).all()]
@@ -295,12 +314,16 @@ def compute_filter_metadata(db: Session) -> dict:
         func.min(FlightRecord.date_of_journey),
         func.max(FlightRecord.date_of_journey),
     ).one()
+    route_count = db.query(
+        func.count(func.distinct(func.concat(FlightRecord.source, '-', FlightRecord.destination)))
+    ).scalar() or 0
     return {
         "sources":       distinct_sorted(FlightRecord.source),
         "destinations":  distinct_sorted(FlightRecord.destination),
         "airlines":      distinct_sorted(FlightRecord.airline),
         "classes":       distinct_sorted(FlightRecord.flight_class),
         "stops":         distinct_sorted(FlightRecord.total_stops),
+        "route_count":   route_count,
         "date_range":    {"from": str(date_bounds[0]), "to": str(date_bounds[1])},
     }
 
@@ -729,6 +752,14 @@ def compute_data_quality_metrics(db: Session) -> dict:
 
     airlines_count = db.query(func.count(func.distinct(FlightRecord.airline))).scalar() or 0
 
+    # Dynamic count: SELECT COUNT(DISTINCT data_source_type) FROM flight_records
+    otas_count = db.query(func.count(func.distinct(FlightRecord.data_source_type))).scalar() or 0
+
+    ds_rows = db.query(func.distinct(FlightRecord.data_source_type)).filter(FlightRecord.data_source_type != None).all()
+    source_tags = [r[0] for r in ds_rows if r[0]]
+    if not source_tags:
+        source_tags = ["Synthetic_Backup"]
+
     last_record_date = db.query(func.max(FlightRecord.date_of_journey)).scalar()
 
     return {
@@ -737,7 +768,8 @@ def compute_data_quality_metrics(db: Session) -> dict:
         "validation_rate_pct":    val_rate,
         "routes_covered":         routes_count,
         "airlines_covered":       airlines_count,
-        "otas_covered":           4,  # MakeMyTrip, EaseMyTrip, Yatra, Google Flights
+        "otas_covered":           otas_count,
+        "data_sources":           source_tags,
         "last_updated":           str(last_record_date) if last_record_date else "2026-09-09",
     }
 
@@ -762,6 +794,10 @@ def compute_geographic_hierarchy(db: Session) -> dict:
     raw_base = db.query(func.avg(FlightRecord.fare)).scalar()
     base_avg_all = float(raw_base) if raw_base else 6000.0
 
+    # SQL-computed national average index (same geometric-mean method used in compute_index_timeseries)
+    ts = compute_index_timeseries(db)
+    nat_idx = ts[-1]["index_value"] if ts else 100.0
+
     for reg_name, cities in regions.items():
         raw_avg = db.query(func.avg(FlightRecord.fare)).filter(
             FlightRecord.source.in_(cities) | FlightRecord.destination.in_(cities)
@@ -784,7 +820,7 @@ def compute_geographic_hierarchy(db: Session) -> dict:
 
     return {
         "country": "India",
-        "national_index": 127.4,
+        "national_index": round(nat_idx, 1),
         "regions": region_stats,
     }
 

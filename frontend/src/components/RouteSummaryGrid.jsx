@@ -1,59 +1,73 @@
-// src/components/RouteSummaryGrid.jsx
+// src/components/RouteSummaryGrid.jsx — Light SaaS Theme
 import React from 'react'
-import { ArrowRight, Plane, TrendingUp, TrendingDown } from 'lucide-react'
+import { ArrowRight, TrendingUp, TrendingDown } from 'lucide-react'
 
 export default function RouteSummaryGrid({ routes = [] }) {
   if (!routes || routes.length === 0) return null
 
   return (
-    <div className="space-y-3">
-      <div className="flex items-center justify-between">
-        <h3 className="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">
-          <Plane size={15} className="text-blue-400" />
+    <div>
+      {/* Section header */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+        <h3 style={{ fontSize: 15, fontWeight: 700, color: '#111111', letterSpacing: '-0.02em' }}>
           Key DGCA Corridor Intelligence
         </h3>
-        <span className="text-xs text-slate-400">Live Traffic-Weighted Basket</span>
+        <span style={{ fontSize: 12, color: '#8a8a8f' }}>Live Traffic-Weighted Basket</span>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4" style={{ gap: 16 }}>
         {routes.map((r, i) => {
           const isPos = r.weekly_change_pct >= 0
           return (
-            <div key={i}
-                 className="p-4 rounded-xl bg-slate-900/90 border border-slate-800/80 hover:border-slate-700 transition-all space-y-3">
-              {/* Header: Route Name */}
-              <div className="flex items-center justify-between border-b border-slate-800 pb-2.5">
-                <span className="text-sm font-bold text-white flex items-center gap-1.5">
-                  {r.source} <ArrowRight size={13} className="text-blue-400" /> {r.destination}
-                </span>
-                <span className="text-[11px] font-mono px-2 py-0.5 rounded bg-slate-800 text-slate-300">
+            <div key={i} className="card" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+              {/* Route header */}
+              <div style={{ borderBottom: '1px solid rgba(0,0,0,0.06)', paddingBottom: 14 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 14, fontWeight: 700, color: '#111111', marginBottom: 8 }}>
+                  <span>{r.source}</span>
+                  <ArrowRight size={13} style={{ color: '#8a8a8f', flexShrink: 0 }} />
+                  <span>{r.destination}</span>
+                </div>
+                <span style={{
+                  padding: '3px 10px', borderRadius: 8,
+                  background: '#f0f0f2', fontSize: 11, fontWeight: 600, color: '#8a8a8f',
+                }}>
                   Index {r.route_index}
                 </span>
               </div>
 
-              {/* Average Fare */}
-              <div className="flex items-baseline justify-between">
+              {/* Fare + change */}
+              <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between' }}>
                 <div>
-                  <p className="text-[10px] text-slate-400 font-medium">Avg Fare</p>
-                  <p className="text-xl font-black text-white font-mono">₹{r.average_fare.toLocaleString()}</p>
+                  <p style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: '#8a8a8f', marginBottom: 4 }}>
+                    Avg Fare
+                  </p>
+                  <p style={{ fontSize: 22, fontWeight: 800, color: '#111111', fontVariantNumeric: 'tabular-nums' }}>
+                    ₹{r.average_fare.toLocaleString('en-IN')}
+                  </p>
                 </div>
-                <div className={`flex items-center gap-1 text-xs font-bold px-2 py-0.5 rounded ${
-                  isPos ? 'bg-emerald-500/10 text-emerald-400' : 'bg-rose-500/10 text-rose-400'
-                }`}>
-                  {isPos ? <TrendingUp size={12} /> : <TrendingDown size={12} />}
+                <div style={{
+                  display: 'flex', alignItems: 'center', gap: 5,
+                  padding: '5px 11px', borderRadius: 99, fontSize: 11, fontWeight: 700,
+                  background: isPos ? 'rgba(46,204,113,0.10)' : 'rgba(255,77,77,0.10)',
+                  color: isPos ? '#2ecc71' : '#ff4d4d',
+                }}>
+                  {isPos ? <TrendingUp size={11} /> : <TrendingDown size={11} />}
                   {isPos ? '+' : ''}{r.weekly_change_pct}% WoW
                 </div>
               </div>
 
-              {/* Min & Max Range */}
-              <div className="grid grid-cols-2 gap-2 pt-1 text-[11px] border-t border-slate-800/60">
+              {/* Min / Max */}
+              <div style={{
+                display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 4,
+                borderTop: '1px solid rgba(0,0,0,0.06)', paddingTop: 12, fontSize: 12,
+              }}>
                 <div>
-                  <span className="text-slate-400">Lowest: </span>
-                  <span className="font-mono font-semibold text-slate-200">₹{r.lowest_fare.toLocaleString()}</span>
+                  <span style={{ color: '#8a8a8f' }}>Lowest: </span>
+                  <span style={{ fontWeight: 700, color: '#111111', fontVariantNumeric: 'tabular-nums' }}>₹{r.lowest_fare.toLocaleString('en-IN')}</span>
                 </div>
-                <div className="text-right">
-                  <span className="text-slate-400">Highest: </span>
-                  <span className="font-mono font-semibold text-slate-200">₹{r.highest_fare.toLocaleString()}</span>
+                <div style={{ textAlign: 'right' }}>
+                  <span style={{ color: '#8a8a8f' }}>Highest: </span>
+                  <span style={{ fontWeight: 700, color: '#111111', fontVariantNumeric: 'tabular-nums' }}>₹{r.highest_fare.toLocaleString('en-IN')}</span>
                 </div>
               </div>
             </div>

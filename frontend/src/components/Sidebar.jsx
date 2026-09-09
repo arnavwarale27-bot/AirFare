@@ -1,119 +1,129 @@
-// src/components/Sidebar.jsx
+// src/components/Sidebar.jsx — Light SaaS Theme
 import React from 'react'
 import {
-  Activity,
-  BarChart3,
-  Flame,
-  Globe,
-  Radio,
-  Sliders,
-  TrendingUp,
-  ShieldCheck,
-  Zap,
-  Clock,
-  Layers
+  Activity, Globe, TrendingUp, BarChart3,
+  Flame, Zap, Radio, BarChart2, Map
 } from 'lucide-react'
 
-export default function Sidebar({ activeTab, setActiveTab }) {
-  const navItems = [
-    { id: 'live', label: 'Live Terminal', icon: Activity },
-    { id: 'route-matrix', label: 'Route Matrix', icon: Globe },
-    { id: 'cpi', label: 'CPI Correlation', icon: TrendingUp },
-    { id: 'lead', label: 'Lead Forecast', icon: BarChart3 },
-  ]
+const ANALYTICS = [
+  { id: 'live',             label: 'Live Terminal',      icon: Activity  },
+  { id: 'route-matrix',    label: 'Route Matrix',       icon: Globe     },
+  { id: 'market-overview', label: 'Market Overview',    icon: Map       },
+  { id: 'carrier',         label: 'Carrier Breakdown',  icon: BarChart2 },
+  { id: 'cpi',             label: 'CPI Correlation',    icon: TrendingUp },
+  { id: 'lead',            label: 'Lead Forecast',      icon: BarChart3 },
+]
 
-  const intelItems = [
-    { id: 'atf', label: 'ATF Yields', icon: Flame },
-    { id: 'alerts', label: 'Anomaly Alerts', icon: Zap },
-  ]
+const INTELLIGENCE = [
+  { id: 'atf',    label: 'ATF Yields',     icon: Flame },
+  { id: 'alerts', label: 'Anomaly Alerts', icon: Zap   },
+]
 
+function NavItem({ item, active, onClick }) {
+  const Icon = item.icon
   return (
-    <aside className="fixed left-0 top-0 h-full w-64 bg-slate-950 border-r border-slate-800/80 z-50 flex flex-col justify-between select-none">
-      <div className="flex flex-col">
-        {/* Radar Logo Header */}
-        <div className="h-16 px-5 flex items-center gap-3 border-b border-slate-800/80">
-          <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-cyan-500/10 text-cyan-400 border border-cyan-500/30 glow-cyan">
-            <Radio size={18} className="animate-pulse" />
+    <button
+      onClick={() => onClick(item.id)}
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 10,
+        padding: '9px 12px',
+        borderRadius: 12,
+        fontSize: 13,
+        fontWeight: 600,
+        width: '100%',
+        textAlign: 'left',
+        border: 'none',
+        cursor: 'pointer',
+        transition: 'background 0.15s, color 0.15s',
+        background: active ? '#111111' : 'transparent',
+        color: active ? '#ffffff' : '#8a8a8f',
+      }}
+      onMouseEnter={e => { if (!active) e.currentTarget.style.background = 'rgba(0,0,0,0.05)'; e.currentTarget.style.color = active ? '#fff' : '#111111' }}
+      onMouseLeave={e => { e.currentTarget.style.background = active ? '#111111' : 'transparent'; e.currentTarget.style.color = active ? '#fff' : '#8a8a8f' }}
+    >
+      <Icon size={15} style={{ color: active ? '#ffffff' : '#8a8a8f', flexShrink: 0 }} />
+      <span>{item.label}</span>
+    </button>
+  )
+}
+
+export default function Sidebar({ page, setPage }) {
+  return (
+    <aside style={{
+      position: 'fixed', left: 0, top: 0, height: '100%', width: 256,
+      background: '#ffffff',
+      boxShadow: '1px 0 0 rgba(0,0,0,0.06)',
+      zIndex: 50,
+      display: 'flex', flexDirection: 'column', justifyContent: 'space-between',
+      userSelect: 'none',
+    }}>
+      <div style={{ display: 'flex', flexDirection: 'column' }}>
+        {/* Brand */}
+        <div style={{
+          height: 64, padding: '0 20px', display: 'flex', alignItems: 'center', gap: 12,
+          borderBottom: '1px solid rgba(0,0,0,0.06)',
+        }}>
+          <div style={{
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            width: 34, height: 34, borderRadius: 10,
+            background: '#111111', color: '#ff6a1a',
+          }}>
+            <Radio size={16} />
           </div>
-          <div className="flex flex-col leading-tight">
-            <span className="font-heading text-sm text-white tracking-tight uppercase font-bold flex items-center gap-1.5">
+          <div style={{ display: 'flex', flexDirection: 'column', lineHeight: 1.2 }}>
+            <span style={{
+              fontFamily: "'Clash Display', 'Inter', sans-serif",
+              fontSize: 14, fontWeight: 700, color: '#111111',
+              letterSpacing: '0.04em', textTransform: 'uppercase',
+            }}>
               NAPI RADAR
             </span>
-            <span className="font-mono text-[10px] text-cyan-400 font-medium tracking-wider">
+            <span style={{ fontSize: 10, color: '#ff6a1a', fontWeight: 600, letterSpacing: '0.06em' }}>
               SIH26056 CORE
             </span>
           </div>
         </div>
 
-        {/* Navigation Sections */}
-        <div className="px-3 py-4 space-y-4">
+        {/* Nav */}
+        <div style={{ padding: '20px 12px', display: 'flex', flexDirection: 'column', gap: 24 }}>
           <div>
-            <div className="px-3 py-1 font-mono text-[10px] text-slate-500 uppercase tracking-wider font-semibold">
+            <p style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: '#8a8a8f', padding: '0 12px', marginBottom: 6 }}>
               Analytics Terminals
-            </div>
-            <nav className="flex flex-col gap-1 mt-1">
-              {navItems.map((item) => {
-                const Icon = item.icon
-                const isActive = activeTab === item.id
-                return (
-                  <button
-                    key={item.id}
-                    onClick={() => setActiveTab(item.id)}
-                    className={`flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-semibold transition-all ${
-                      isActive
-                        ? 'bg-cyan-500/15 text-cyan-300 border border-cyan-500/30 shadow-[0_0_12px_rgba(6,182,212,0.25)]'
-                        : 'text-slate-400 hover:bg-slate-900 hover:text-slate-200'
-                    }`}
-                  >
-                    <Icon size={16} className={isActive ? 'text-cyan-400' : 'text-slate-500'} />
-                    <span>{item.label}</span>
-                  </button>
-                )
-              })}
+            </p>
+            <nav style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+              {ANALYTICS.map(item => (
+                <NavItem key={item.id} item={item} active={page === item.id} onClick={setPage} />
+              ))}
             </nav>
           </div>
-
           <div>
-            <div className="px-3 py-1 font-mono text-[10px] text-slate-500 uppercase tracking-wider font-semibold">
+            <p style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: '#8a8a8f', padding: '0 12px', marginBottom: 6 }}>
               Intelligence
-            </div>
-            <div className="flex flex-col gap-1 mt-1">
-              {intelItems.map((item) => {
-                const Icon = item.icon
-                const isActive = activeTab === item.id
-                return (
-                  <button
-                    key={item.id}
-                    onClick={() => setActiveTab(item.id)}
-                    className={`flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-semibold transition-all ${
-                      isActive
-                        ? 'bg-cyan-500/15 text-cyan-300 border border-cyan-500/30 shadow-[0_0_12px_rgba(6,182,212,0.25)]'
-                        : 'text-slate-400 hover:bg-slate-900 hover:text-slate-200'
-                    }`}
-                  >
-                    <Icon size={16} className={isActive ? 'text-cyan-400' : 'text-slate-500'} />
-                    <span>{item.label}</span>
-                  </button>
-                )
-              })}
-            </div>
+            </p>
+            <nav style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+              {INTELLIGENCE.map(item => (
+                <NavItem key={item.id} item={item} active={page === item.id} onClick={setPage} />
+              ))}
+            </nav>
           </div>
         </div>
       </div>
 
-      {/* Engine Status & System Info */}
-      <div className="p-4 border-t border-slate-800/80 space-y-2">
-        <div className="flex items-center justify-between px-3 py-1.5 bg-slate-900 rounded-md border border-slate-800">
-          <span className="font-mono text-[10px] text-slate-400">ENGINE STATE</span>
-          <span className="font-mono text-[10px] text-emerald-400 font-bold flex items-center gap-1">
-            <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+      {/* Engine Status */}
+      <div style={{ padding: 16, borderTop: '1px solid rgba(0,0,0,0.06)' }}>
+        <div style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          padding: '10px 14px', background: '#f4f4f6', borderRadius: 12,
+        }}>
+          <span style={{ fontSize: 10, fontWeight: 600, color: '#8a8a8f', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Engine</span>
+          <span style={{ fontSize: 10, fontWeight: 700, color: '#2ecc71', display: 'flex', alignItems: 'center', gap: 5 }}>
+            <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#2ecc71', display: 'inline-block' }} />
             NOMINAL
           </span>
         </div>
-        <div className="px-2 text-slate-500 font-mono text-[10px] flex items-center justify-between">
-          <span>SYS VER 4.2.1</span>
-          <span className="text-cyan-400 font-semibold">CALIBRATED</span>
-        </div>
+        <p style={{ textAlign: 'center', fontSize: 10, color: '#8a8a8f', marginTop: 8 }}>SYS VER 4.2.1 · CALIBRATED</p>
       </div>
     </aside>
   )

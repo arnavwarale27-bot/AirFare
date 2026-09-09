@@ -548,11 +548,14 @@ def _migrate_provenance_columns() -> None:
 
 def _bulk_insert(records: list[dict], dry_run: bool = False) -> tuple[int, int]:
     """
-    Insert records into flight_records in chunks.
+    Insert records into flight_records in chunks, deduplicating against existing DB rows
+    with matching (flight_code, date_of_journey, source, destination).
     Returns (inserted_count, skipped_count).
     """
     if not records:
         return 0, 0
+
+    now_utc_str = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
     if dry_run:
         _log("INFO", f"  DRY-RUN: would insert {len(records)} records")
@@ -565,29 +568,67 @@ def _bulk_insert(records: list[dict], dry_run: bool = False) -> tuple[int, int]:
     try:
         for i in range(0, len(records), INSERT_CHUNK):
             chunk = records[i : i + INSERT_CHUNK]
+
+            # Fetch existing records matching chunk keys for deduplication
+            chunk_dates = {rec["date_of_journey"] for rec in chunk}
+            chunk_sources = {rec["source"] for rec in chunk}
+            chunk_dests = {rec["destination"] for rec in chunk}
+
+            existing_rows = db.query(
+                FlightRecord.flight_code,
+                FlightRecord.date_of_journey,
+                FlightRecord.source,
+                FlightRecord.destination,
+            ).filter(
+                FlightRecord.date_of_journey.in_(chunk_dates),
+                FlightRecord.source.in_(chunk_sources),
+                FlightRecord.destination.in_(chunk_dests),
+            ).all()
+
+            existing_set = {
+                (r.flight_code or "", str(r.date_of_journey), r.source, r.destination)
+                for r in existing_rows
+            }
+
             orm_objs = []
             _t_chunk = time.time()
             for rec in chunk:
                 try:
+                    f_code = rec.get("flight_code")
+                    j_date_str = str(rec["date_of_journey"])
+                    src = rec["source"]
+                    dst = rec["destination"]
+
+                    # Deduplication check: flight_code + date_of_journey + source + destination
+                    dedup_key = (f_code or "", j_date_str, src, dst)
+                    if dedup_key in existing_set:
+                        skipped += 1
+                        continue
+
+                    existing_set.add(dedup_key)
+
+                    data_source = rec.get("data_source_type") or "Live_Scraped"
+                    scraped_time = rec.get("scraped_at") or now_utc_str
+
                     obj = FlightRecord(
                         date_of_journey      = rec["date_of_journey"],
                         journey_day          = rec.get("journey_day"),
                         airline              = rec["airline"],
-                        flight_code          = rec.get("flight_code"),
+                        flight_code          = f_code,
                         flight_class         = rec.get("flight_class", "Economy"),
-                        source               = rec["source"],
+                        source               = src,
                         departure            = rec.get("departure"),
                         total_stops          = rec.get("total_stops", "non-stop"),
                         arrival              = rec.get("arrival"),
-                        destination          = rec["destination"],
+                        destination          = dst,
                         duration_in_hours    = rec.get("duration_in_hours"),
                         days_left            = rec.get("days_left"),
                         fare                 = rec["fare"],
                         base_fare            = rec.get("base_fare"),
                         taxes_and_surcharges = rec.get("taxes_and_surcharges"),
                         total_fare           = rec.get("total_fare"),
-                        data_source_type     = rec.get("data_source_type", "Live_Scraped"),
-                        scraped_at           = rec.get("scraped_at"),
+                        data_source_type     = data_source,
+                        scraped_at           = scraped_time,
                     )
                     orm_objs.append(obj)
                     inserted += 1
@@ -595,16 +636,17 @@ def _bulk_insert(records: list[dict], dry_run: bool = False) -> tuple[int, int]:
                     _log("WARN", f"    Record build error: {exc}")
                     skipped += 1
 
-            db.bulk_save_objects(orm_objs)
-            db.commit()
-            chunk_elapsed = time.time() - _t_chunk
-            audit.db_insert(
-                "flight_records",
-                len(orm_objs),
-                chunk_elapsed,
-                records[i].get("data_source_type", "Unknown") if records else "Unknown",
-            )
-            _log("OK", f"  ✓  Inserted chunk {i // INSERT_CHUNK + 1}: {len(orm_objs)} rows")
+            if orm_objs:
+                db.bulk_save_objects(orm_objs)
+                db.commit()
+                chunk_elapsed = time.time() - _t_chunk
+                audit.db_insert(
+                    "flight_records",
+                    len(orm_objs),
+                    chunk_elapsed,
+                    chunk[0].get("data_source_type", "Live_Scraped"),
+                )
+                _log("OK", f"  ✓  Inserted chunk {i // INSERT_CHUNK + 1}: {len(orm_objs)} rows ({skipped} duplicates skipped)")
 
     except SQLAlchemyError as exc:
         _log("ERROR", f"DB insert error: {exc}")
@@ -628,9 +670,137 @@ def _print_summary(stats: dict) -> None:
     print(f"  Routes synthetic       : {stats['synthetic_routes']}")
     print(f"  Total records scraped  : {stats['total_records']}")
     print(f"  Inserted into DB       : {stats['inserted']}")
-    print(f"  Skipped (errors)       : {stats['skipped']}")
+    print(f"  Skipped (dupes/errors) : {stats['skipped']}")
     print(f"  Elapsed                : {stats['elapsed_s']:.1f}s")
     print("─" * 60 + "\n")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Public scraper execution function
+# ─────────────────────────────────────────────────────────────────────────────
+
+def run_scraper(
+    source: Optional[str] = None,
+    destination: Optional[str] = None,
+    windows: Optional[list[int] | str] = None,
+    dry_run: bool = False,
+    headful: bool = False,
+    proxy_server: Optional[str] = None,
+    no_migrate: bool = False,
+    **_kwargs,
+) -> dict:
+    """
+    Main scraper execution function. Runs Playwright MakeMyTrip scraper across DGCA routes.
+    Returns dictionary with run statistics and success status.
+    """
+    if isinstance(windows, str):
+        parsed_windows = [int(w.strip()) for w in windows.split(",") if w.strip()]
+    elif isinstance(windows, list):
+        parsed_windows = windows
+    else:
+        parsed_windows = DEFAULT_WINDOWS
+
+    if source and destination:
+        routes = [(source, destination)]
+    else:
+        routes = DGCA_ROUTES
+
+    _log("INFO", "Scraper Engine  — SIH26056 / National Airfare Price Index")
+    _log("INFO", f"Routes          : {len(routes)}")
+    _log("INFO", f"Windows (T+)    : {parsed_windows}")
+    _log("INFO", f"Dry-run         : {dry_run}")
+    _log("INFO", f"Fallback CSV    : {FALLBACK_CSV.name} ({'✓ exists' if FALLBACK_CSV.exists() else '✗ missing'})")
+
+    if not no_migrate and not dry_run:
+        _migrate_provenance_columns()
+
+    start = time.time()
+    all_records: list[dict] = []
+    stats = {
+        "routes_attempted": 0,
+        "live_routes": 0,
+        "synthetic_routes": 0,
+        "total_records": 0,
+        "inserted": 0,
+        "skipped": 0,
+        "elapsed_s": 0.0,
+        "success": True,
+        "error": None,
+    }
+
+    try:
+        with sync_playwright() as pw:
+            browser, context = _build_context(pw, headless=not headful, proxy_server=proxy_server)
+            page = context.new_page()
+
+            for src, dst in routes:
+                for days_ahead in parsed_windows:
+                    if len(all_records) >= MAX_RECORDS_PER_RUN:
+                        _log("WARN", f"Reached MAX_RECORDS_PER_RUN={MAX_RECORDS_PER_RUN} — stopping early")
+                        break
+
+                    journey_date = date.today() + timedelta(days=days_ahead)
+                    stats["routes_attempted"] += 1
+
+                    records = scrape_route(src, dst, journey_date, page=page)
+
+                    if records:
+                        source_types = {r["data_source_type"] for r in records}
+                        if "Live_Scraped" in source_types:
+                            stats["live_routes"] += 1
+                        else:
+                            stats["synthetic_routes"] += 1
+                        all_records.extend(records)
+                        stats["total_records"] += len(records)
+
+                    _human_delay(DELAY_MIN, DELAY_MAX)
+
+                else:
+                    continue
+                break
+
+            page.close()
+            context.close()
+            browser.close()
+
+        if all_records:
+            _log("INFO", f"\nInserting {len(all_records)} records into flight_records …")
+            ins, skip = _bulk_insert(all_records, dry_run=dry_run)
+            stats["inserted"] = ins
+            stats["skipped"]  = skip
+
+    except Exception as exc:
+        _log("ERROR", f"Scraper execution error: {exc}")
+        stats["success"] = False
+        stats["error"] = str(exc)
+
+    stats["elapsed_s"] = time.time() - start
+    audit.scraper_session(
+        routes_attempted  = stats["routes_attempted"],
+        live_routes       = stats["live_routes"],
+        synthetic_routes  = stats["synthetic_routes"],
+        total_records     = stats["total_records"],
+        inserted          = stats["inserted"],
+        elapsed_s         = stats["elapsed_s"],
+    )
+    _print_summary(stats)
+
+    try:
+        from scheduler import logger
+        if stats["success"]:
+            logger.info(
+                f"Scrape Run Complete | Scraped: {stats['total_records']} | "
+                f"Ingested: {stats['inserted']} | Skipped/Dupes: {stats['skipped']} | Duration: {stats['elapsed_s']:.2f}s"
+            )
+        else:
+            logger.error(
+                f"Scrape Run Failed | Scraped: {stats['total_records']} | "
+                f"Ingested: {stats['inserted']} | Error: {stats['error']} | Duration: {stats['elapsed_s']:.2f}s"
+            )
+    except Exception:
+        pass
+
+    return stats
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -658,87 +828,7 @@ def main() -> None:
                         help="Skip schema migration (if columns already exist)")
     args = parser.parse_args()
 
-    windows: list[int] = [int(w.strip()) for w in args.windows.split(",")]
-
-    # Determine route list
-    if args.source and args.destination:
-        routes = [(args.source, args.destination)]
-    else:
-        routes = DGCA_ROUTES
-
-    _log("INFO", "Scraper Engine  — SIH26056 / National Airfare Price Index")
-    _log("INFO", f"Routes          : {len(routes)}")
-    _log("INFO", f"Windows (T+)    : {windows}")
-    _log("INFO", f"Dry-run         : {args.dry_run}")
-    _log("INFO", f"Fallback CSV    : {FALLBACK_CSV.name} ({'✓ exists' if FALLBACK_CSV.exists() else '✗ missing'})")
-
-    # Ensure DB columns exist
-    if not args.no_migrate and not args.dry_run:
-        _migrate_provenance_columns()
-
-    start = time.time()
-    all_records: list[dict] = []
-    stats = {
-        "routes_attempted": 0,
-        "live_routes": 0,
-        "synthetic_routes": 0,
-        "total_records": 0,
-        "inserted": 0,
-        "skipped": 0,
-        "elapsed_s": 0.0,
-    }
-
-    with sync_playwright() as pw:
-        browser, context = _build_context(pw, headless=not args.headful, proxy_server=args.proxy_server)
-        page = context.new_page()
-
-        for src, dst in routes:
-            for days_ahead in windows:
-                if len(all_records) >= MAX_RECORDS_PER_RUN:
-                    _log("WARN", f"Reached MAX_RECORDS_PER_RUN={MAX_RECORDS_PER_RUN} — stopping early")
-                    break
-
-                journey_date = date.today() + timedelta(days=days_ahead)
-                stats["routes_attempted"] += 1
-
-                records = scrape_route(src, dst, journey_date, page=page)
-
-                if records:
-                    source_types = {r["data_source_type"] for r in records}
-                    if "Live_Scraped" in source_types:
-                        stats["live_routes"] += 1
-                    else:
-                        stats["synthetic_routes"] += 1
-                    all_records.extend(records)
-                    stats["total_records"] += len(records)
-
-                _human_delay(DELAY_MIN, DELAY_MAX)
-
-            else:
-                continue
-            break
-
-        page.close()
-        context.close()
-        browser.close()
-
-    # ── Bulk insert ────────────────────────────────────────────────────────
-    if all_records:
-        _log("INFO", f"\nInserting {len(all_records)} records into flight_records …")
-        ins, skip = _bulk_insert(all_records, dry_run=args.dry_run)
-        stats["inserted"] = ins
-        stats["skipped"]  = skip
-
-    stats["elapsed_s"] = time.time() - start
-    audit.scraper_session(
-        routes_attempted  = stats["routes_attempted"],
-        live_routes       = stats["live_routes"],
-        synthetic_routes  = stats["synthetic_routes"],
-        total_records     = stats["total_records"],
-        inserted          = stats["inserted"],
-        elapsed_s         = stats["elapsed_s"],
-    )
-    _print_summary(stats)
+    run_scraper(**vars(args))
 
 
 if __name__ == "__main__":

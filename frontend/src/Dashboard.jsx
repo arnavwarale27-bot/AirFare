@@ -1,225 +1,87 @@
-// src/Dashboard.jsx
-import { useEffect, useState, useCallback } from 'react'
+// src/Dashboard.jsx — Light SaaS shell router
+import { useState } from 'react'
 import Sidebar from './components/Sidebar'
 import TelemetryHeader from './components/TelemetryHeader'
-import HorizonControlBar from './components/HorizonControlBar'
-import InterpretationBanner from './components/InterpretationBanner'
-import StatCards from './components/StatCards'
-import RouteSummaryGrid from './components/RouteSummaryGrid'
-import DistributionCard from './components/DistributionCard'
-import DataQualityCard from './components/DataQualityCard'
-import GeographicTree from './components/GeographicTree'
-import FilterBar from './components/FilterBar'
-import IndexChart from './components/IndexChart'
-import RouteTrendsChart from './components/RouteTrendsChart'
-import AirlineChart from './components/AirlineChart'
-import LeadtimeChart from './components/LeadtimeChart'
-import {
-  fetchTimeseries,
-  fetchRouteTrends,
-  fetchAirlines,
-  fetchLeadtime,
-  fetchDistribution,
-  fetchQuality,
-  fetchGeography,
-  fetchRouteSummary
-} from './api'
-import { AlertCircle, RefreshCw } from 'lucide-react'
+import LiveTerminalPage from './pages/LiveTerminalPage'
+import RouteMatrixPage from './pages/RouteMatrixPage'
+import MarketOverviewPage from './pages/MarketOverviewPage'
+import CarrierBreakdownPage from './pages/CarrierBreakdownPage'
+import StubPage from './pages/StubPage'
 
-const DEFAULT_FILTERS = { source: 'Bangalore', destination: 'Delhi', cls: 'Economy' }
-
-function interpolateSeries(series) {
-  if (!series?.length) return series
-
-  const result = []
-  for (let i = 0; i < series.length; i++) {
-    result.push(series[i])
-
-    if (i < series.length - 1) {
-      const curr = new Date(series[i].date)
-      const next = new Date(series[i + 1].date)
-      const gapDays = Math.round((next - curr) / 86_400_000)
-
-      if (gapDays > 1) {
-        const fields = ['index_value', 'avg_fare', 'rolling_avg_7d', 'pct_change']
-        for (let d = 1; d < gapDays; d++) {
-          const t = d / gapDays
-          const gapDate = new Date(curr)
-          gapDate.setDate(gapDate.getDate() + d)
-          const point = { date: gapDate.toISOString().slice(0, 10), _interpolated: true }
-          fields.forEach(f => {
-            const a = series[i][f]
-            const b = series[i + 1][f]
-            point[f] = a != null && b != null ? +(a + (b - a) * t).toFixed(4) : null
-          })
-          result.push(point)
-        }
-      }
-    }
-  }
-  return result
+const PAGE_TITLES = {
+  'live':             'Live Terminal',
+  'route-matrix':     'Route Matrix',
+  'market-overview':  'Market Overview',
+  'carrier':          'Carrier Breakdown',
+  'cpi':              'CPI Correlation',
+  'lead':             'Lead Forecast',
+  'atf':              'ATF Yields',
+  'alerts':           'Anomaly Alerts',
 }
 
-function ErrorBanner({ message, onRetry }) {
-  return (
-    <div className="flex items-center justify-between gap-3 p-4 rounded-xl mb-4"
-         style={{ background: 'rgba(244,63,94,0.07)', border: '1px solid rgba(244,63,94,0.2)' }}>
-      <div className="flex items-center gap-3">
-        <AlertCircle size={16} className="shrink-0" style={{ color: '#fb7185' }} />
-        <div>
-          <p className="text-sm font-semibold" style={{ color: '#fb7185' }}>Backend Offline</p>
-          <p className="text-xs mt-0.5 text-slate-400">
-            {message ?? 'Cannot connect to FastAPI at localhost:8000.'}
-          </p>
-        </div>
-      </div>
-      {onRetry && (
-        <button onClick={onRetry}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium shrink-0"
-                style={{ background: 'rgba(244,63,94,0.1)', border: '1px solid rgba(244,63,94,0.25)', color: '#fb7185' }}>
-          <RefreshCw size={12} /> Retry
-        </button>
-      )}
-    </div>
-  )
+function PageContent({ page }) {
+  switch (page) {
+    case 'live':            return <LiveTerminalPage />
+    case 'route-matrix':    return <RouteMatrixPage />
+    case 'market-overview': return <MarketOverviewPage />
+    case 'carrier':         return <CarrierBreakdownPage />
+    case 'cpi':             return (
+      <StubPage title="CPI Correlation Terminal"
+        description="Consumer Price Index correlation analysis against airfare movements — calibrating models." />
+    )
+    case 'lead':            return (
+      <StubPage title="Lead-time Forecast Engine"
+        description="Predictive booking window and demand-curve forecasting — coming in next release." />
+    )
+    case 'atf':             return (
+      <StubPage title="ATF Yields Intelligence"
+        description="Aviation Turbine Fuel price correlation and yield impact analysis — under construction." />
+    )
+    case 'alerts':          return (
+      <StubPage title="Anomaly Alerts System"
+        description="Real-time statistical anomaly detection across all corridors — calibrating alert thresholds." />
+    )
+    default:                return <LiveTerminalPage />
+  }
 }
 
 export default function Dashboard() {
-  const [activeTab, setActiveTab] = useState('live')
-  const [filters, setFilters] = useState(DEFAULT_FILTERS)
-
-  // Global statistical state
-  const [indexData, setIndexData]       = useState(null)
-  const [indexLoading, setIndexLoading] = useState(true)
-  const [indexError, setIndexError]     = useState(null)
-
-  const [qualityData, setQualityData]       = useState(null)
-  const [geographyData, setGeographyData]   = useState(null)
-  const [routeSummary, setRouteSummary]     = useState([])
-
-  // Filter-dependent state
-  const [routeData, setRouteData]         = useState(null)
-  const [routeLoading, setRouteLoading]   = useState(false)
-  const [airlineData, setAirlineData]     = useState(null)
-  const [airlineLoading, setAirlineLoading] = useState(false)
-  const [leadData, setLeadData]           = useState(null)
-  const [leadLoading, setLeadLoading]     = useState(false)
-  const [distribution, setDistribution]   = useState(null)
-
-  // Fetch global platform indicators
-  const loadGlobalData = useCallback(() => {
-    setIndexLoading(true)
-    Promise.all([
-      fetchTimeseries(),
-      fetchQuality(),
-      fetchGeography(),
-      fetchRouteSummary()
-    ])
-      .then(([timeseries, quality, geo, routes]) => {
-        setIndexData({ ...timeseries, series: interpolateSeries(timeseries.series) })
-        setQualityData(quality)
-        setGeographyData(geo)
-        setRouteSummary(routes)
-        setIndexError(null)
-      })
-      .catch(e => setIndexError(e.message))
-      .finally(() => setIndexLoading(false))
-  }, [])
-
-  useEffect(() => { loadGlobalData() }, [loadGlobalData])
-
-  // Fetch filter-dependent route statistics
-  const loadRouteData = useCallback(() => {
-    const { source, destination, cls } = filters
-    if (!source || !destination) return
-
-    setRouteLoading(true)
-    setAirlineLoading(true)
-    setLeadLoading(true)
-
-    Promise.all([
-      fetchRouteTrends(source, destination, cls),
-      fetchAirlines(source, destination, cls),
-      fetchLeadtime(source, destination, cls),
-      fetchDistribution(source, destination, cls),
-    ])
-      .then(([route, airlines, lead, dist]) => {
-        setRouteData(route)
-        setAirlineData(airlines)
-        setLeadData(lead)
-        setDistribution(dist)
-      })
-      .catch(console.error)
-      .finally(() => {
-        setRouteLoading(false)
-        setAirlineLoading(false)
-        setLeadLoading(false)
-      })
-  }, [filters])
-
-  useEffect(() => { loadRouteData() }, [loadRouteData])
+  const [page, setPage] = useState('live')
 
   return (
-    <div className="bg-slate-950 min-h-screen text-slate-100 flex">
-      {/* 1. Left Fixed Sidebar */}
-      <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} />
+    <div style={{ background: '#f4f4f6', minHeight: '100vh', display: 'flex' }}>
+      <Sidebar page={page} setPage={setPage} />
 
-      {/* Main Viewport Container */}
-      <div className="pl-64 flex-1 flex flex-col min-w-0">
-        {/* 2. Top Telemetry Header */}
+      <div style={{ paddingLeft: 256, flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
         <TelemetryHeader />
 
-        {/* 3. Main Dashboard Canvas */}
-        <main className="pt-20 px-8 py-6 space-y-6 max-w-[1600px] w-full mx-auto">
-          {indexError && <ErrorBanner message={indexError} onRetry={loadGlobalData} />}
-
-          {/* Telemetry Horizon Control Bar */}
-          <HorizonControlBar onRefresh={loadGlobalData} />
-
-          {/* Headline Indicator & Interpretation Banner */}
-          <InterpretationBanner
-            indexValue={indexData?.series?.slice(-1)[0]?.index_value ?? 127.4}
-            pctChange={indexData?.series?.slice(-1)[0]?.pct_change ?? 4.2}
-            yoyChange={8.7}
-          />
-
-          {/* Executive KPI Metric Cards */}
-          <StatCards series={indexData?.series} />
-
-          {/* Key DGCA Corridor Intelligence Summaries */}
-          <RouteSummaryGrid routes={routeSummary} />
-
-          {/* Interactive Filter Bar */}
-          <FilterBar filters={filters} setFilters={setFilters} />
-
-          {/* Composite Airfare Price Index Timeseries */}
-          <IndexChart series={indexData?.series} loading={indexLoading} />
-
-          {/* Route Trends + Booking Window Lead-time Side by Side */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <RouteTrendsChart
-              data={routeData}
-              loading={routeLoading}
-              source={filters.source}
-              destination={filters.destination}
-            />
-            <LeadtimeChart data={leadData} loading={leadLoading} />
+        <main
+          key={page}
+          style={{
+            paddingTop: 80, paddingBottom: 40,
+            paddingLeft: 32, paddingRight: 32,
+            maxWidth: 1600, width: '100%', margin: '0 auto',
+          }}
+        >
+          {/* Breadcrumb */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 24 }}>
+            <span style={{ fontSize: 11, fontWeight: 600, color: '#8a8a8f', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+              NAPI RADAR
+            </span>
+            <span style={{ color: '#d0d0d6' }}>/</span>
+            <span style={{ fontSize: 11, fontWeight: 700, color: '#111111', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+              {PAGE_TITLES[page] ?? page}
+            </span>
           </div>
 
-          {/* 5-Number Price Distribution Spectrum */}
-          <DistributionCard dist={distribution} />
+          <PageContent page={page} />
 
-          {/* Carrier Fare Comparison & Market Share */}
-          <AirlineChart data={airlineData} loading={airlineLoading} />
-
-          {/* Geographic & Regional Market Breakdown */}
-          <GeographicTree geography={geographyData} />
-
-          {/* Data Quality & Statistical Governance Audit */}
-          <DataQualityCard quality={qualityData} />
-
-          <footer className="text-center py-6 text-xs text-slate-500 font-mono border-t border-slate-800/80 mt-8">
-            NAPI RADAR (SIH26056) &nbsp;·&nbsp; Official MoSPI / DGCA Statistical Aviation Terminal &nbsp;·&nbsp; System Ver 4.2.1 Calibrated
+          <footer style={{
+            textAlign: 'center', padding: '28px 0 8px',
+            fontSize: 11, color: '#c0c0c6', letterSpacing: '0.04em',
+            borderTop: '1px solid rgba(0,0,0,0.06)', marginTop: 40,
+          }}>
+            NAPI RADAR (SIH26056) · Official MoSPI / DGCA Statistical Aviation Terminal · System Ver 4.2.1
           </footer>
         </main>
       </div>

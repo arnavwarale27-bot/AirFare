@@ -1,56 +1,52 @@
-// src/components/DataQualityCard.jsx
+// src/components/DataQualityCard.jsx — Light SaaS Theme
 import React from 'react'
-import { ShieldCheck, Database, Layers, CheckCircle2, Clock } from 'lucide-react'
+import { ShieldCheck, CheckCircle2, Clock } from 'lucide-react'
 
 export default function DataQualityCard({ quality }) {
   if (!quality) return null
 
+  const cells = [
+    { label: 'Collected',    val: quality.observations_collected.toLocaleString('en-IN'), color: '#111111' },
+    { label: 'Valid Records',val: quality.valid_observations.toLocaleString('en-IN'),     color: '#2ecc71' },
+    { label: 'Routes',       val: quality.routes_covered,                                 color: '#111111' },
+    { label: 'Airlines',     val: quality.airlines_covered,                               color: '#111111' },
+    { label: 'OTAs Tracked', val: quality.otas_covered,                                  color: '#111111' },
+    { label: 'Last Updated', val: quality.last_updated,                                   color: '#8a8a8f', small: true },
+  ]
+
   return (
-    <div className="p-5 rounded-2xl bg-slate-900/90 border border-slate-800/80 space-y-4">
-      <div className="flex items-center justify-between">
-        <h3 className="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">
-          <ShieldCheck size={16} className="text-emerald-400" />
-          Data Quality & Governance Audit
-        </h3>
-        <span className="flex items-center gap-1.5 text-xs text-emerald-400 font-semibold px-2.5 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/20">
-          <CheckCircle2 size={12} />
-          {quality.validation_rate_pct}% Valid Observations
+    <div className="card">
+      {/* Header */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <ShieldCheck size={15} style={{ color: '#8a8a8f' }} />
+          <h3 style={{ fontSize: 15, fontWeight: 700, color: '#111111' }}>
+            Data Quality &amp; Governance Audit
+          </h3>
+        </div>
+        <span style={{
+          display: 'flex', alignItems: 'center', gap: 6,
+          padding: '5px 14px', borderRadius: 99,
+          background: 'rgba(46,204,113,0.10)', fontSize: 12, fontWeight: 700, color: '#2ecc71',
+        }}>
+          <CheckCircle2 size={12} /> {quality.validation_rate_pct}% Valid
         </span>
       </div>
 
-      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-3">
-        <div className="p-3 rounded-xl bg-slate-950/60 border border-slate-800/80 text-center">
-          <p className="text-[10px] text-slate-400 font-medium">Collected</p>
-          <p className="text-sm font-bold text-white font-mono mt-0.5">{quality.observations_collected.toLocaleString()}</p>
-        </div>
-
-        <div className="p-3 rounded-xl bg-slate-950/60 border border-slate-800/80 text-center">
-          <p className="text-[10px] text-slate-400 font-medium">Valid Records</p>
-          <p className="text-sm font-bold text-emerald-400 font-mono mt-0.5">{quality.valid_observations.toLocaleString()}</p>
-        </div>
-
-        <div className="p-3 rounded-xl bg-slate-950/60 border border-slate-800/80 text-center">
-          <p className="text-[10px] text-slate-400 font-medium">Routes Covered</p>
-          <p className="text-sm font-bold text-blue-400 font-mono mt-0.5">{quality.routes_covered}</p>
-        </div>
-
-        <div className="p-3 rounded-xl bg-slate-950/60 border border-slate-800/80 text-center">
-          <p className="text-[10px] text-slate-400 font-medium">Airlines</p>
-          <p className="text-sm font-bold text-indigo-400 font-mono mt-0.5">{quality.airlines_covered}</p>
-        </div>
-
-        <div className="p-3 rounded-xl bg-slate-950/60 border border-slate-800/80 text-center">
-          <p className="text-[10px] text-slate-400 font-medium">OTAs Tracked</p>
-          <p className="text-sm font-bold text-purple-400 font-mono mt-0.5">{quality.otas_covered}</p>
-        </div>
-
-        <div className="p-3 rounded-xl bg-slate-950/60 border border-slate-800/80 text-center">
-          <p className="text-[10px] text-slate-400 font-medium">Last Updated</p>
-          <p className="text-xs font-semibold text-slate-300 mt-1 flex items-center justify-center gap-1">
-            <Clock size={11} className="text-slate-400" />
-            {quality.last_updated}
-          </p>
-        </div>
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6" style={{ gap: 12 }}>
+        {cells.map((c, i) => (
+          <div key={i} style={{ padding: '14px 16px', borderRadius: 14, background: '#f8f8fa', textAlign: 'center' }}>
+            <p style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: '#8a8a8f', marginBottom: 6 }}>
+              {c.label}
+            </p>
+            {c.small
+              ? <p style={{ fontSize: 11, fontWeight: 600, color: c.color, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4 }}>
+                  <Clock size={11} style={{ color: '#8a8a8f' }} /> {c.val}
+                </p>
+              : <p style={{ fontSize: 16, fontWeight: 800, color: c.color, fontVariantNumeric: 'tabular-nums' }}>{c.val}</p>
+            }
+          </div>
+        ))}
       </div>
     </div>
   )
