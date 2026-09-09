@@ -40,10 +40,8 @@ from __future__ import annotations
 
 import argparse
 import json
-import math
 import random
 import re
-import sys
 import time
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
@@ -59,10 +57,9 @@ from playwright.sync_api import (
 )
 from sqlalchemy.exc import SQLAlchemyError
 
-from database import engine, Base, get_db
-from models import FlightRecord
+from database import engine, get_db
+from models import FlightRecord  # noqa: F401 — registers FlightRecord
 from logger import audit
-import models  # noqa: F401 — registers FlightRecord
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -309,17 +306,17 @@ def _extract_cards(page: Page, source: str, destination: str,
 
     for card in cards[:30]:    # cap at 30 per route-window
         try:
-            def _text(sel: str) -> str:
-                el = card.query_selector(sel)
+            def _text(c, sel: str) -> str:
+                el = c.query_selector(sel)
                 return el.inner_text().strip() if el else ""
 
-            airline     = _text(_SEL["airline"])
-            flight_code = _text(_SEL["flight_code"])
-            dep_time    = _text(_SEL["departure_time"])
-            arr_time    = _text(_SEL["arrival_time"])
-            dur_raw     = _text(_SEL["duration"])
-            stops_raw   = _text(_SEL["stops"])
-            price_raw   = _text(_SEL["total_price"])
+            airline     = _text(card, _SEL["airline"])
+            flight_code = _text(card, _SEL["flight_code"])
+            dep_time    = _text(card, _SEL["departure_time"])
+            arr_time    = _text(card, _SEL["arrival_time"])
+            dur_raw     = _text(card, _SEL["duration"])
+            stops_raw   = _text(card, _SEL["stops"])
+            price_raw   = _text(card, _SEL["total_price"])
 
             if not airline or not price_raw:
                 continue    # incomplete card — skip
@@ -648,7 +645,7 @@ def main() -> None:
     else:
         routes = DGCA_ROUTES
 
-    _log("INFO", f"Scraper Engine  — SIH26056 / National Airfare Price Index")
+    _log("INFO", "Scraper Engine  — SIH26056 / National Airfare Price Index")
     _log("INFO", f"Routes          : {len(routes)}")
     _log("INFO", f"Windows (T+)    : {windows}")
     _log("INFO", f"Dry-run         : {args.dry_run}")

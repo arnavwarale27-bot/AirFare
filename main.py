@@ -35,7 +35,7 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from database import get_db
+from database import engine, get_db
 from index_engine import (
     compute_airline_comparison,
     compute_dgca_weighted_index,
@@ -45,7 +45,6 @@ from index_engine import (
     compute_leadtime_curve,
     compute_route_trends,
     build_nso_export_payload,
-    DGCA_ROUTE_WEIGHTS,
 )
 from models import FlightRecord
 from logger import audit

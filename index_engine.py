@@ -23,10 +23,10 @@ from __future__ import annotations
 
 import math
 from collections import defaultdict
-from datetime import date, timedelta
+from datetime import date
 from typing import Optional
 
-from sqlalchemy import Float, Integer, func, case, text
+from sqlalchemy import Float, case, func
 from sqlalchemy.orm import Session
 
 from models import FlightRecord
