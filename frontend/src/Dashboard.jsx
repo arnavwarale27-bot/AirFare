@@ -1,6 +1,8 @@
 // src/Dashboard.jsx
 import { useEffect, useState, useCallback } from 'react'
-import Navbar from './components/Navbar'
+import Sidebar from './components/Sidebar'
+import TelemetryHeader from './components/TelemetryHeader'
+import HorizonControlBar from './components/HorizonControlBar'
 import InterpretationBanner from './components/InterpretationBanner'
 import StatCards from './components/StatCards'
 import RouteSummaryGrid from './components/RouteSummaryGrid'
@@ -60,20 +62,20 @@ function interpolateSeries(series) {
 
 function ErrorBanner({ message, onRetry }) {
   return (
-    <div className="flex items-center justify-between gap-3 p-4 rounded-2xl mb-4"
+    <div className="flex items-center justify-between gap-3 p-4 rounded-xl mb-4"
          style={{ background: 'rgba(244,63,94,0.07)', border: '1px solid rgba(244,63,94,0.2)' }}>
       <div className="flex items-center gap-3">
         <AlertCircle size={16} className="shrink-0" style={{ color: '#fb7185' }} />
         <div>
           <p className="text-sm font-semibold" style={{ color: '#fb7185' }}>Backend Offline</p>
-          <p className="text-xs mt-0.5" style={{ color: 'var(--text-secondary)' }}>
+          <p className="text-xs mt-0.5 text-slate-400">
             {message ?? 'Cannot connect to FastAPI at localhost:8000.'}
           </p>
         </div>
       </div>
       {onRetry && (
         <button onClick={onRetry}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium shrink-0"
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium shrink-0"
                 style={{ background: 'rgba(244,63,94,0.1)', border: '1px solid rgba(244,63,94,0.25)', color: '#fb7185' }}>
           <RefreshCw size={12} /> Retry
         </button>
@@ -83,6 +85,7 @@ function ErrorBanner({ message, onRetry }) {
 }
 
 export default function Dashboard() {
+  const [activeTab, setActiveTab] = useState('live')
   const [filters, setFilters] = useState(DEFAULT_FILTERS)
 
   // Global statistical state
@@ -157,59 +160,69 @@ export default function Dashboard() {
   useEffect(() => { loadRouteData() }, [loadRouteData])
 
   return (
-    <div style={{ background: 'var(--bg-base)', minHeight: '100vh' }}>
-      <Navbar />
+    <div className="bg-slate-950 min-h-screen text-slate-100 flex">
+      {/* 1. Left Fixed Sidebar */}
+      <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} />
 
-      <main className="max-w-[1400px] mx-auto px-6 py-8 space-y-6">
+      {/* Main Viewport Container */}
+      <div className="pl-64 flex-1 flex flex-col min-w-0">
+        {/* 2. Top Telemetry Header */}
+        <TelemetryHeader />
 
-        {indexError && <ErrorBanner message={indexError} onRetry={loadGlobalData} />}
+        {/* 3. Main Dashboard Canvas */}
+        <main className="pt-20 px-8 py-6 space-y-6 max-w-[1600px] w-full mx-auto">
+          {indexError && <ErrorBanner message={indexError} onRetry={loadGlobalData} />}
 
-        {/* 1. Primary Headline Indicator & Interpretation */}
-        <InterpretationBanner
-          indexValue={indexData?.series?.slice(-1)[0]?.index_value ?? 127.4}
-          pctChange={indexData?.series?.slice(-1)[0]?.pct_change ?? 4.2}
-          yoyChange={8.7}
-        />
+          {/* Telemetry Horizon Control Bar */}
+          <HorizonControlBar onRefresh={loadGlobalData} />
 
-        {/* 2. Key KPI Metric Cards */}
-        <StatCards series={indexData?.series} />
-
-        {/* 3. Top Corridor Summaries */}
-        <RouteSummaryGrid routes={routeSummary} />
-
-        {/* 4. Filter Bar */}
-        <FilterBar filters={filters} setFilters={setFilters} />
-
-        {/* 5. National Airfare Price Index Trend */}
-        <IndexChart series={indexData?.series} loading={indexLoading} />
-
-        {/* 6. Route Trends + Booking Window Side by Side */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <RouteTrendsChart
-            data={routeData}
-            loading={routeLoading}
-            source={filters.source}
-            destination={filters.destination}
+          {/* Headline Indicator & Interpretation Banner */}
+          <InterpretationBanner
+            indexValue={indexData?.series?.slice(-1)[0]?.index_value ?? 127.4}
+            pctChange={indexData?.series?.slice(-1)[0]?.pct_change ?? 4.2}
+            yoyChange={8.7}
           />
-          <LeadtimeChart data={leadData} loading={leadLoading} />
-        </div>
 
-        {/* 7. Price Distribution Percentile Box (Min, P25, Median, Mean, P75, Max) */}
-        <DistributionCard dist={distribution} />
+          {/* Executive KPI Metric Cards */}
+          <StatCards series={indexData?.series} />
 
-        {/* 8. Carrier Fares & Market Share */}
-        <AirlineChart data={airlineData} loading={airlineLoading} />
+          {/* Key DGCA Corridor Intelligence Summaries */}
+          <RouteSummaryGrid routes={routeSummary} />
 
-        {/* 9. Regional Market Hierarchy */}
-        <GeographicTree geography={geographyData} />
+          {/* Interactive Filter Bar */}
+          <FilterBar filters={filters} setFilters={setFilters} />
 
-        {/* 10. Statistical Governance & Data Quality Audit Box */}
-        <DataQualityCard quality={qualityData} />
+          {/* Composite Airfare Price Index Timeseries */}
+          <IndexChart series={indexData?.series} loading={indexLoading} />
 
-        <footer className="text-center py-6 text-xs text-slate-400 border-t border-slate-800/80 mt-8">
-          National Airfare Price Index (SIH26056) &nbsp;·&nbsp; Official MoSPI / DGCA Statistical Platform &nbsp;·&nbsp; Real-time Aviation Intelligence
-        </footer>
-      </main>
+          {/* Route Trends + Booking Window Lead-time Side by Side */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <RouteTrendsChart
+              data={routeData}
+              loading={routeLoading}
+              source={filters.source}
+              destination={filters.destination}
+            />
+            <LeadtimeChart data={leadData} loading={leadLoading} />
+          </div>
+
+          {/* 5-Number Price Distribution Spectrum */}
+          <DistributionCard dist={distribution} />
+
+          {/* Carrier Fare Comparison & Market Share */}
+          <AirlineChart data={airlineData} loading={airlineLoading} />
+
+          {/* Geographic & Regional Market Breakdown */}
+          <GeographicTree geography={geographyData} />
+
+          {/* Data Quality & Statistical Governance Audit */}
+          <DataQualityCard quality={qualityData} />
+
+          <footer className="text-center py-6 text-xs text-slate-500 font-mono border-t border-slate-800/80 mt-8">
+            NAPI RADAR (SIH26056) &nbsp;·&nbsp; Official MoSPI / DGCA Statistical Aviation Terminal &nbsp;·&nbsp; System Ver 4.2.1 Calibrated
+          </footer>
+        </main>
+      </div>
     </div>
   )
 }
