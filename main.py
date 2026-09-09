@@ -11,9 +11,12 @@ Endpoints
   GET /api/v1/filters                Dropdown metadata for UI
   GET /api/v1/index/timeseries       Global price index (baseline-100)
   GET /api/v1/index/leadtime         Booking-window pricing curve
+  GET /api/v1/index/apix             DGCA traffic-weighted APIx          [Phase 5]
   GET /api/v1/routes/trends          Daily price trend for a route
   GET /api/v1/airlines/comparison    Per-airline market share & fares
+  GET /api/v1/fares/decomposition    Base-fare vs. tax breakdown          [Phase 5]
   GET /api/v1/flights/search         Paginated raw flight search
+  GET /api/v1/nso/export             Structured NSO/MoSPI export (JSON/CSV) [Phase 5]
 
 Run:
   uvicorn main:app --reload --port 8000
@@ -21,22 +24,44 @@ Run:
 
 from __future__ import annotations
 
+import csv
+import io
+import os
 from typing import Optional
 
-from fastapi import Depends, FastAPI, HTTPException, Query
+from fastapi import Depends, FastAPI, Header, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from database import get_db
 from index_engine import (
     compute_airline_comparison,
+    compute_dgca_weighted_index,
+    compute_fare_decomposition,
     compute_filter_metadata,
     compute_index_timeseries,
     compute_leadtime_curve,
     compute_route_trends,
+    build_nso_export_payload,
+    DGCA_ROUTE_WEIGHTS,
 )
 from models import FlightRecord
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Security — API key for protected NSO endpoints
+# Set env var NSO_API_KEY before running; defaults to dev key for local use.
+# ─────────────────────────────────────────────────────────────────────────────
+_NSO_API_KEY = os.environ.get("NSO_API_KEY", "nso-dev-key-2024")
+
+def _require_api_key(x_api_key: str = Header(default="", alias="X-API-Key")) -> None:
+    """FastAPI dependency — rejects requests without a valid X-API-Key header."""
+    if x_api_key != _NSO_API_KEY:
+        raise HTTPException(
+            status_code=403,
+            detail="Invalid or missing X-API-Key. Contact NSO Data Infrastructure team.",
+        )
 
 # ─────────────────────────────────────────────────────────────────────────────
 # App bootstrap
@@ -298,7 +323,140 @@ def flights_search(
                 "duration_hours":   r.duration_in_hours,
                 "days_left":        r.days_left,
                 "fare":             r.fare,
+                "base_fare":        r.base_fare,
+                "taxes_surcharges": r.taxes_and_surcharges,
+                "total_fare":       r.total_fare,
             }
             for r in records
         ],
     }
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Phase 5 — DGCA Traffic-Weighted Index (APIx)
+# ─────────────────────────────────────────────────────────────────────────────
+
+@app.get(
+    "/api/v1/index/apix",
+    tags=["Phase 5 · DGCA Index"],
+    summary="DGCA traffic-weighted Airfare Price Index (APIx)",
+    description=(
+        "Computes the composite Airfare Price Index (APIx) using official DGCA "
+        "domestic passenger traffic share weights for 9 major city-pair routes. "
+        "Returns daily, weekly, or monthly index values with base_fare / tax "
+        "decomposition. Suitable for MoSPI CPI Transport sub-index augmentation."
+    ),
+)
+def dgca_apix(
+    frequency: str = Query("daily", enum=["daily", "weekly", "monthly"],
+                           description="Aggregation frequency"),
+    db: Session = Depends(get_db),
+):
+    data = compute_dgca_weighted_index(db, frequency=frequency)
+    if not data["series"]:
+        raise HTTPException(status_code=404, detail="No DGCA basket data found")
+    return {
+        "frequency":     frequency,
+        "data_points":   len(data["series"]),
+        "methodology":   data["methodology"],
+        "basket_routes": data["basket_routes"],
+        "series":        data["series"],
+    }
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Phase 5 — Fare Decomposition
+# ─────────────────────────────────────────────────────────────────────────────
+
+@app.get(
+    "/api/v1/fares/decomposition",
+    tags=["Phase 5 · Fare Decomposition"],
+    summary="Base fare vs. taxes & surcharges breakdown",
+    description=(
+        "Returns daily average base_fare, taxes_and_surcharges, and effective "
+        "tax rate for the selected route. Filters are optional — omitting them "
+        "returns the all-India aggregate. Based on India GST regime: 5%% Economy, "
+        "12%% Business/First, plus ₹450 fixed UDF/ADF/PSF surcharges."
+    ),
+)
+def fare_decomposition(
+    source:       Optional[str] = Query(None, description="Origin city"),
+    destination:  Optional[str] = Query(None, description="Destination city"),
+    flight_class: Optional[str] = Query(None, alias="class", description="Cabin class"),
+    db: Session = Depends(get_db),
+):
+    data = compute_fare_decomposition(db, source=source,
+                                      destination=destination,
+                                      flight_class=flight_class)
+    if not data["series"]:
+        raise HTTPException(status_code=404, detail="No fare decomposition data found")
+    return data
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Phase 5 — NSO Export (Secure)
+# ─────────────────────────────────────────────────────────────────────────────
+
+@app.get(
+    "/api/v1/nso/export",
+    tags=["Phase 5 · NSO Export"],
+    summary="Structured NSO/MoSPI export — JSON or CSV",
+    description=(
+        "**Secured endpoint** — requires `X-API-Key` header.\n\n"
+        "Returns a fully structured payload for government inflation monitoring, "
+        "combining the composite standard index, the DGCA traffic-weighted APIx, "
+        "and the base-fare / tax decomposition at the requested frequency.\n\n"
+        "Pass `?format=csv` to download as a UTF-8 CSV file for RBI/NSO systems. "
+        "Default response is JSON.\n\n"
+        "**Dev key**: `nso-dev-key-2024` (set `NSO_API_KEY` env var in production)."
+    ),
+    dependencies=[Depends(_require_api_key)],
+)
+def nso_export(
+    frequency: str = Query(
+        "daily",
+        enum=["daily", "weekly", "monthly"],
+        description="Aggregation frequency for the export",
+    ),
+    format: str = Query(
+        "json",
+        enum=["json", "csv"],
+        description="Response format: 'json' (default) or 'csv' for direct download",
+    ),
+    db: Session = Depends(get_db),
+    _: None = Depends(_require_api_key),   # double-bind for OpenAPI display
+):
+    payload = build_nso_export_payload(db, frequency=frequency)
+
+    if not payload["series"]:
+        raise HTTPException(status_code=404, detail="No data available for NSO export")
+
+    if format == "json":
+        return payload
+
+    # ── CSV download ────────────────────────────────────────────────────────
+    if not payload["series"]:
+        raise HTTPException(status_code=404, detail="No series data to export as CSV")
+
+    fieldnames = list(payload["series"][0].keys())
+    buf = io.StringIO()
+
+    # Write header block for traceability
+    buf.write(f"# {payload['document']['title']}\n")
+    buf.write(f"# Classification: {payload['document']['classification']}\n")
+    buf.write(f"# Generated: {payload['document']['generated_at']}\n")
+    buf.write(f"# Frequency: {frequency}\n")
+    buf.write(f"# Base period: {payload['dataset']['base_period']} (Index=100)\n")
+    buf.write(f"# Records: {payload['dataset']['total_records']:,}\n")
+    buf.write("#\n")
+
+    writer = csv.DictWriter(buf, fieldnames=fieldnames, extrasaction="ignore")
+    writer.writeheader()
+    writer.writerows(payload["series"])
+
+    filename = f"DAPI_NSO_Export_{frequency}_{payload['dataset']['base_period']}.csv"
+    return StreamingResponse(
+        iter([buf.getvalue()]),
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
