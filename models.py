@@ -142,8 +142,28 @@ class FlightRecord(Base):
         comment="Total ticket price in INR (same as fare; explicit for NSO reporting)",
     )
 
+    # ------------------------------------------------------------------
+    # Provenance (Phase 6 — Scraper Engine)
+    # Set automatically by scraper_engine.py and ingest pipelines.
+    # ------------------------------------------------------------------
+    data_source_type = Column(
+        String(30),
+        nullable=True,
+        index=True,
+        default="Cleaned_CSV",
+        comment=(
+            "Provenance flag: 'Live_Scraped' | 'Synthetic_Backup' | "
+            "'Cleaned_CSV' | 'Normalized_Raw'"
+        ),
+    )
+    scraped_at = Column(
+        String(30),       # ISO-8601 UTC string — avoids TZ complexity in SQLite compat
+        nullable=True,
+        comment="UTC timestamp when this record was captured by the scraper",
+    )
+
     def __repr__(self) -> str:
         return (
             f"<FlightRecord id={self.id} airline={self.airline!r} "
-            f"date={self.date_of_journey} fare={self.fare}>"
+            f"date={self.date_of_journey} fare={self.fare} src={self.data_source_type}>"
         )
